@@ -528,7 +528,7 @@ def do_peekfs(cmd,path,*args):
         'touch': fp.touch,
         'rm': fp.remove,
         'makedirs': fp.makedirs,
-        'basename': fp.bsaename,
+        'basename': fp.basename,
         'dirname': fp.dirname,
         'parent': fp.parent,
         'mkdir': fp.createDirectory,
