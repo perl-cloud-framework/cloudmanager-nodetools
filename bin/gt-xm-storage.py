@@ -49,8 +49,8 @@ command=sys.argv[2]
 cmdargs=sys.argv[3:]
 
 cmdtable={
-    'putf': wstring,
-    'appendf': astring,
+    #'putf': wstring,
+    #'appendf': astring,
     'extract': do_extract,
     'urlextract': do_urlextract,
     'rawriteurl': do_rawriteurl,
@@ -408,6 +408,11 @@ class Fork(object):
             def timeout(signum,frame):
                 raise IOError('Took longer than {0} seconds!'.format(self.timeout))
 
+            # Yes, the variable names are cute, but shouldn't be
+            # distracting...
+            #  fifo is a fifo, jack is our pid,
+            #  fee is the client's fifo-fh.
+            #  fum is the server's fifo-fh.
             fifo=os.mkfifo('/tmp/'+argv[0]+'.ipc')
             jack=os.fork()
             if jack == 0:
@@ -510,6 +515,44 @@ def do_rawriteurl(url, dest):
 
 @Fork(timeout=1800)
 def do_peekfs(cmd,path,*args):
+    # wstring simply writes a string to new file
+    #    def _wstring(filename,string):
+    #        # Right teh filez LOL -KTHXBYE, LOLCATZ
+    #        tehfile=path.open('w')
+    #        tehfile.write(string)
+    #        tehfile.close()
+
+    # wstring writes a string to file
+    def _astring(fp):
+        def _wrap(path,string):
+            tehfile=path.open('a')
+            # Pydocs say both that this should be a no-op
+            # BUT also say that some systems will not seek on their own?
+            # we're just being careful here...
+            tehfile.seek(0,os.SEEK_END)
+            tehfile.write(string)
+            tehfile.close()
+        return lambda *args: _wrap(fp,*args)
+
+    # Templating engine
+    def _template(fp):
+        def _wrap(path,**template):
+            scratchfile=path.dirname()+"."+path.basename()".tmp"
+            fh=path.open('r')
+
+            sfp=FilePath(scratchfile)
+            sfh=sfp.open('w')
+            seeklast=0
+            for buffer in fh.readlines():
+                for line in buffer:
+                    sfh.write(line.format(**template))
+            sfh.flush()
+            sfh.close()
+            fh.close()
+
+            sfp.moveTo(path.realpath())
+        return lambda *args: _wrap(fp,*args)
+
 
     mntpnt=dsklst['/'].mount()
     os.chdir(mntpnt)
@@ -540,7 +583,9 @@ def do_peekfs(cmd,path,*args):
         'parent': fp.parent,
         'mkdir': fp.createDirectory,
         'cp': fp.copyTo,
-        'mv': fp.moveTo
+        'mv': fp.moveTo,
+        'append_string': _astring(fp)
+        'apply_template': _template(fp)
     }[cmd](*args)
 
 def do_template:
