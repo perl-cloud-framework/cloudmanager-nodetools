@@ -588,81 +588,9 @@ def do_peekfs(cmd,path,*args):
         'apply_template': _template(fp),
         'wget': _wget(fp),
         'urlextract': _urlextract(fp),
-        'extract': _extract(fp)
+        'extract': _extract(fp),
+        'mknod': _mknod(fp)
     }[cmd](*args)
-
-def do_template:
-    if os.path.islink(os.path.join(instdir,"etc/hostname")):
-        fail("hostname file is a symlink in guest image.");
-    if os.path.islink(os.path.join(instdir,"etc/fstab")):
-        fail("fstab file is a symlink in guest image.");
-    if os.path.islink(os.path.join(instdir,"etc/host")):
-        fail("host file is a symlink in guest image.");
-    if os.path.islink(os.path.join(instdir,"etc/resolv.conf")):
-        fail("resolv.conf file is a symlink in guest image.");
-    if os.path.islink(os.path.join(instdir,"dev/xvc")):
-        fail("xvc device is a symlink in guest image.");
-
-
-    wstring(guestname, os.path.join(instdir,"etc/hostname"))
-
-    # Open template...
-    TTfstabFH=open('/etc/xen/shell/gt-reimage/fstab.template')
-    # Read template, should be a small file, so in-memory is okay...
-    TTfstab=TTfstabFH.readlines()
-    TTfstabFH.close()
-    # Write fstab file, replacing $storage with 
-    # with each disk's fstab line, joined by newlines
-    #for x in map(lambda x: x.fstab(),dsklst):
-    for line in [ x.fstab() for x in dsklst ]:
-        TTfstab.append(line)
-    wstring('\n'.join(TTfstab), os.path.join(instdir,"etc/fstab"))
-
-    wstring("127.0.0.1 localhost {0}".format(guestname),os.path.join(instdir,"etc/hosts"))
-
-    #cp /root/skel/fstab "/mnt/${guestname}/etc/"
-    #cp /root/skel/resolv.conf "/mnt/${guestname}/etc/"
-    shutil.copy2("/root/skel/resolv.conf",os.path.join(instdir,"etc/resolv.conf"))
-
-    # Make proc and sys directories, lets assume this is good, not evil!?!
-    try:
-        os.mkdir(os.path.join(instdir,"proc"),755)
-        os.mkdir(os.path.join(instdir,"sys"),755)
-    except:
-        pass
-
-    # If we can't beat them, join them!
-    # We won't offer customers a tty1 device as normal, so make it a xvc0 device for real!
-    try:
-        os.unlink(os.path.join(instdir,"dev/tty1"))
-        subprocess.Popen("/bin/mknod",os.path.join(instdir,"dev/tty1"),"c","204","191").wait()
-        os.unlink(os.path.join(instdir,"dev/xvc0"))
-        subprocess.Popen("/bin/mknod",os.path.join(instdir,"dev/xvc0"),"c","204","191").wait()
-    except:
-        pass
-
-    DISTRO=DISTRO.split('-',1)[0].upper()
-    if not POSTINST.has_key(DISTRO):
-        print >>sys.stderr, "Post-install script not found.\n"
-        #fail ('Post-install script not found.')
-    else:
-        env={
-            'guestname':guestname,
-            'IPADDRESS':IPADDRESS,
-            'IPGATEWAY':IPGATEWAY,
-            'IPNETMASK':IPNETMASK,
-            'PasswdHash':PasswdHash,
-            'PATH':"/bin:/sbin:/usr/bin:/usr/sbin" }
-        # I haven't figured out why these variables
-        # are turning into tuples, but I suspect there might be newlines
-        # in the raw environment variables causing it?? - ERICW
-        # this fixes the environment variables...
-        for k,v in env.items():
-            if type(v) is tuple:
-                env[k]=v[0]
-        # Run the post-inst script, further-cleaning ENV
-        sp=subprocess.Popen(POSTINST[DISTRO], env=env)
-    sp.wait()
 
 def do_umount:
     print "Unmounting filesystem"
