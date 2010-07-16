@@ -58,6 +58,18 @@ cmdtable={
     'debootstrap': do_debootstrap
 }
 
+
+# Sanity checks...
+if guestname.find("..") != -1:
+    fail ("Guest '{0}' specified is invalid".format(guestname))
+if guestname.find("/") != -1:
+    fail ("Guest '{0}' specified is invalid".format(guestname))
+
+if not DISKMAP[sizemem]:
+    fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
+
+instdir=os.path.join("/mnt/",guestname)
+
 # Call given command
 cmdtable[cmd](*cmdargs)
 sys.exit 0
@@ -73,6 +85,39 @@ MKFS={
     'swap': ('mkswap','{device}'),
     'keep': ('true','{device}')
 }
+
+# My shift from a struct to a class-based system...
+dsklst={
+    '/': Disk(
+        method='iSCSI',
+        size= DISKMAP[sizemem],
+        location= '10.1.0.1',
+        mntpnt= '/',
+        mount=True,
+        ftype= fschoice.lower(),
+        wipe= 0,
+        volname= guestname,
+        wipesrc= '/dev/zero',
+        partition= partchoice,
+        dev="/dev/sda1",
+        options="defaults,noatime"
+    ),
+    'swap': Disk(
+        method='LVM',
+        size= '{0}M'.format(int(sizemem)*2),
+        location= 'XenSwap',
+        mntpnt= 'none',
+        mount=False,
+        ftype= 'swap',
+        wipe= 0,
+        volname= "{0}swap".format(guestname),
+        wipesrc= '/dev/zero',
+        partition = False,
+        dev="/dev/sdb1",
+        options="defaults"
+    )
+}
+
 
 def fail(msg):
     print >>sys.stderr, msg
@@ -333,79 +378,6 @@ class Disk:
 
         return mntpnt
 
-# Sanity checks...
-if guestname.find("..") != -1:
-    fail ("Guest '{0}' specified is invalid".format(guestname))
-if guestname.find("/") != -1:
-    fail ("Guest '{0}' specified is invalid".format(guestname))
-
-if not DISKMAP[sizemem]:
-    fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
-
-# My shift from a struct to a class-based system...
-dsklst={
-    '/': Disk(
-        method='iSCSI',
-        size= DISKMAP[sizemem],
-        location= '10.1.0.1',
-        mntpnt= '/',
-        mount=True,
-        ftype= fschoice.lower(),
-        wipe= 0,
-        volname= guestname,
-        wipesrc= '/dev/zero',
-        partition= partchoice,
-        dev="/dev/sda1",
-        options="defaults,noatime"
-    ),
-    'swap': Disk(
-        method='LVM',
-        size= '{0}M'.format(int(sizemem)*2),
-        location= 'XenSwap',
-        mntpnt= 'none',
-        mount=False,
-        ftype= 'swap',
-        wipe= 0,
-        volname= "{0}swap".format(guestname),
-        wipesrc= '/dev/zero',
-        partition = False,
-        dev="/dev/sdb1",
-        options="defaults"
-    )
-}
-
-instdir=os.path.join("/mnt/",guestname)
-
-def do_format:
-    rootmounted=False
-    # Format and mount disks
-    for mntpnt,disk in dsklst.items():
-        print "Formatting filesystem.\n"
-        disk.format()
-
-        print "format complete."
-
-        if disk.domount:
-            print >>sys.stderr, "Mounting filesystem at instdir ({0})".format(instdir)
-            disk.mount(parent=instdir)
-
-        if disk.mntpnt == '/':
-            rootmounted=True
-
-    if not rootmounted:
-        fail ("New root filesystem not found.")
-
-
-def do_debootstrap:
-    print "Beginning installation."
-    print >>sys.stderr, "Install begin for User: {guestname}".format(guestname=guestname)
-    sp=None
-    if os=='debian':
-        print >>sys.stderr, "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
-        subprocess.call(('debootstrap','--arch',OSARCH,VERSION,instdir,MIRROR),stdout=sys.stdout)
-    elif os=='ubuntu':
-        print >>sys.stderr, "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
-        subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',OSARCH,VERSION,instdir,MIRROR),stdout=sys.stdout)
 
 # Basic Time class
 class Time(object):
@@ -425,6 +397,7 @@ class Time(object):
         return months(1)*cnt
 
 # Define a forker!
+# A good plan when doing a chroot or such...
 class Fork(object):
     def __init__ (self, timeout=None):
         self.timeout = timeout if timeout
@@ -455,6 +428,39 @@ class Fork(object):
 
             return True if cexit == 0 else False
         return wrapper_f
+
+def do_format:
+    rootmounted=False
+    # Format and mount disks
+    for mntpnt,disk in dsklst.items():
+        print "Formatting filesystem.\n"
+        disk.format()
+
+        print "format complete."
+
+        if disk.domount:
+            print >>sys.stderr, "Mounting filesystem at instdir ({0})".format(instdir)
+            disk.mount(parent=instdir)
+
+        if disk.mntpnt == '/':
+            rootmounted=True
+
+    if not rootmounted:
+        fail ("New root filesystem not found.")
+
+
+@Fork(timeout=3600)
+def do_debootstrap:
+    print "Beginning installation."
+    print >>sys.stderr, "Install begin for User: {guestname}".format(guestname=guestname)
+    sp=None
+    if os=='debian':
+        print >>sys.stderr, "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
+        subprocess.call(('debootstrap','--arch',OSARCH,VERSION,instdir,MIRROR),stdout=sys.stdout)
+    elif os=='ubuntu':
+        print >>sys.stderr, "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
+        subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',OSARCH,VERSION,instdir,MIRROR),stdout=sys.stdout)
+
 
 @Fork(timeout=1800)
 def do_extract(uri, dest):
@@ -577,5 +583,5 @@ def do_umount:
     subprocess.call(("umount",instdir))
 
     print "Installation complete."
-sys.exit(0)
+
 
