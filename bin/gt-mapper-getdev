@@ -1,0 +1,18 @@
+#!/bin/bash
+#% DEPENDS: dmsetup, sed, sysutils
+#% AUTHOR: Eric Windisch
+#% LICENSE: MIT
+if [ $# -lt 1 ]; then
+	echo "usage: $0 [devices...]"
+fi
+
+while [ $# -gt 0 ]
+do
+	if [ ! -e "/dev/mapper/$1" ]; then
+	 echo "Device not found." >&2
+	 exit 1
+	fi
+	echo $(dmsetup info $1 2>/dev/null | sed -n '/^Major, minor/{ s/.*,\s\+/dm-/; p; }')
+	shift
+done
+#iostat -d $DEVICE | sed '1d'

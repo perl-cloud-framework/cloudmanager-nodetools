@@ -1,0 +1,168 @@
+#!/bin/bash
+. /usr/bin/gt-config-loader
+
+# Block Ctrl-C and other naughty signals - All resistence is futile!
+trap '' 1
+trap '' 2
+trap '' 15
+
+function fail {
+        logger -t gt-reimage "[$UID] $1"
+        echo $1
+        exit 1
+}
+
+#guestcfg="$GUESTCFGDIR/$guestname"
+echo "${guestname}" | grep '\.\.' 2>&1 > /dev/null && fail "Guest '${guestname}' specified is invalid"
+echo "${guestname}" | grep '/' 2>&1 > /dev/null && fail "Guest '${guestname}' specified is invalid"
+
+[ -z "${DISKMAP[$sizemem]}" ] && fail "Memory size unknown in configuration. ${sizemem}, ${DISKMAP[$sizemem]}"
+
+odev="/dev/mapper/${GUEST_DISK_DISKGROUP}-${guestname}"
+
+if [ ! -e "$odev" ]; then
+#[ ! -d /mnt/${guestname} ]; then
+	# Create disks.
+	/etc/xen/shell/gt-reimage/disk.d/${DISKFMT} \
+		"${DISKMAP[$sizemem]}" "${guestname}" "${GUEST_DISK_DISKGROUP}" ||
+			fail "Could not create disk."
+
+	/etc/xen/shell/gt-reimage/disk.d/${DISKFMT} \
+		"${SWAPMAP[$sizemem]}" "${guestname}${GUEST_DISK_SWAPVOL_POSTFIX}" "${GUEST_DISK_SWAPGROUP}" ||
+			fail "Could not create swap disk."
+
+	# Wiping is provided as a security measure to prevent
+	# data exposure.  Simply zero'ing blocks is sufficient
+	# unless users have physical access to the device.
+	if [ -n "$GUEST_DISK_WIPEFIRST" ]; then
+		while [ "$GUEST_DISK_WIPEFIRST_COUNT" -gt 0 ]; do
+			[ -b "$odev" ] ||
+				fail 'Will not overwrite non-block device!'
+
+			echo "Wiping block device (may take a while)"
+			dd "if=${GUEST_DISK_WIPEFIRST_DEV}" bs=8M | pv | dd "of=${odev}" bs=8M
+			GUEST_DISK_WIPEFIRST_COUNT=$((GUEST_DISK_WIPEFIRST_COUNT-1))
+		done
+	fi
+else
+	# fuser caused major problems.. but we should really do it..
+	#fuser -k -m /mnt/${guestname}
+	umount "/mnt/${guestname}"
+fi
+
+if [ -z "$partchoice" ] || [ $partchoice -eq 0 ]; then
+	echo "No partition."
+else
+	# make partition
+	parted -s $odev mklabel msdos
+	parted -s $odev mkpart primary 0 $partchoice
+	# toss it into the device manager (multipath required)
+	kpartx -a ${odev}p1
+	# change the device path
+	odev="${odev}p1"
+fi
+
+# Set the FSTYPE based on the user's input.
+eval 'declare FSTYPE=$'`echo "$fschoice" | tr '/[:lower:]/' '/[:upper:]/'`
+
+[ -z "${MKFS[$FSTYPE]}" ] && fail 'Filesystem choice invalid.'
+
+echo "Building filesystem ($FSTYPE) with '${MKFS[$FSTYPE]}'"
+sleep 1
+${MKFS[$FSTYPE]} "${odev}"
+mkswap "/dev/mapper/${GUEST_DISK_SWAPGROUP}-${guestname}${GUEST_DISK_SWAPVOL_POSTFIX}"
+
+[ -b "${odev}" ] ||
+	fail 'Will not mount non-block device!'
+
+echo "Mounting filesystem"
+mkdir -p "/mnt/${guestname}" || fail "Could not make dir"
+mount "${odev}" "/mnt/${guestname}" || fail "Could not mount"
+sleep 1
+
+echo "Changing directory"
+cd "/mnt/${guestname}" || fail "Could not 'cd'"
+
+[ -z "${OSFAMILY}" ] && fail 'OS not defined.'
+
+echo "Beginning installation for ${OSFAMILY}-${VERSION} ($distro) via $METHOD from $MIRROR"
+sleep 5
+case $METHOD in
+	debootstrap)
+	echo "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
+	sleep 1
+	debootstrap --arch $OSARCH "$VERSION" /mnt/${guestname} $MIRROR
+	;;
+
+	udebootstrap)
+	echo "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
+	sleep 1
+	debootstrap --no-resolve-deps --exclude=console-setup --arch $OSARCH "$VERSION" /mnt/${guestname} $MIRROR
+	;;
+
+
+	rinse)
+	echo "Executing rinse ($OSARCH $VERSION /mnt/${guestname} $MIRROR)"
+	sleep 1
+	rinse --arch $OSARCH --distribution "fedora-core-$VERSION" --directory /mnt/${guestname}
+	;;
+
+	image)
+	echo "Fetching Image: $MIRROR/$distro-$OSARCH.tar.bz2"
+	sleep 1
+	wget -O - "$MIRROR/$distro-$OSARCH.tar.bz2" | tar jx
+	;;
+
+	image2)
+	for a in ${distributions[@]}; do
+		echo "Checking $a for $distro"
+		# only break if the choice is acceptable
+		if [ "${a:0:${#distro}}" == "$distro" ]; then
+		IMGFILE=`echo "$a" | cut -d- -f3-`
+		break
+		fi
+	done
+        echo "Fetching Image: $MIRROR/$IMGFILE"
+        sleep 1
+	echo "$IMGFILE" | grep 'bz2$' && TYPE='j'
+	echo "$IMGFILE" | grep 'gz$' && TYPE='z'
+	[ -z $TYPE ] && exit 1
+	wget -O - "$MIRROR/$IMGFILE" | tar ${TYPE}x
+	;;
+
+	user-image)
+	echo "Attempting to fetch: $MIRROR"
+	sleep 1
+	echo "$MIRROR" | grep 'bz2$' && TYPE='j'
+	echo "$MIRROR" | grep 'gz$' && TYPE='z'
+	[ -z $TYPE ] && exit 1
+	wget -O - "$MIRROR" | tar ${TYPE}x
+	;;
+esac
+
+echo $useracct > "/mnt/${guestname}/etc/hostname"
+echo "127.0.0.1 localhost $useracct" > "/mnt/${guestname}/etc/hosts"
+cp /root/skel/fstab "/mnt/${guestname}/etc/"
+cp /root/skel/resolv.conf "/mnt/${guestname}/etc/"
+
+[ -z "${POSTINST[$OSFAMILY]}" ] && fail 'Post-install script not found.'
+
+# Run the post-inst script, further-cleaning ENV
+env - \
+	guestname="$guestname" \
+	IPADDRESS="$IPADDRESS" \
+	IPGATEWAY="$IPGATEWAY" \
+	IPNETMASK="$IPNETMASK" \
+	PasswdHash="$PasswdHash" \
+	PATH="/bin:/sbin:/usr/bin:/usr/sbin" \
+	bash ${POSTINST[$OSFAMILY]}
+
+echo "Unmounting filesystem"
+cd /tmp
+fuser -k -9 -c "/mnt/${guestname}"
+sync; sync
+
+umount "/mnt/${guestname}" || # try again until nobody is using it
+	fail "Count not umount"
+
+

@@ -1,0 +1,412 @@
+#!/usr/bin/env python2.6
+# gt-xm-reimage0.py - uid0 reimaging script 
+# refactored from original gt-xm-reimage0 shell script
+# Copyright (C) 2006-2010 Eric Windisch
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys
+import subprocess
+import os
+import signal
+
+# required for iscsi
+import json
+import urllib2
+
+## Block Ctrl-C and other naughty signals - All resistence is futile!
+#signal.signal(1,None)
+#signal.signal(2,None)
+#signal.signal(15,None)
+
+def fail(msg):
+    print msg
+    print "\n"
+    sys.exit(1)
+
+# import args from bash script frontend...
+# TODO: undo/fix this!
+guestname=os.environ['guestname']
+partchoice=os.environ['partchoice']
+sizemem=os.environ['sizemem']
+OSARCH=os.environ['OSARCH']
+VERSION=os.environ['VERSION']
+MIRROR=os.environ['MIRROR']
+METHOD=os.environ['METHOD']
+IPADDRESS=os.environ['IPADDRESS'],
+IPGATEWAY=os.environ['IPGATEWAY'],
+IPNETMASK=os.environ['IPNETMASK'],
+PasswdHash=os.environ['PasswdHash'],
+fschoice=os.environ['fschoice']
+distro=os.environ['distro']
+OSFAMILY=os.environ['OSFAMILY']
+#IMGFILE=os.environ['IMGFIlE']
+useracct=os.environ['useracct']
+
+# REMOVE THESE GLOBALS!
+
+DISKMAP={
+	'64':'4G',
+	'96':'4G',
+	'128':'8G',
+	'192':'8G',
+	'256':'16G',
+	'320':'16G',
+	'512':'32G',
+	'768':'32G',
+	'1024':'64G',
+	'2048':'128G'
+}
+
+MKFS={
+    'ext3': 'mkfs.ext3 -m1',
+    'reiserfs': 'mkfs.reiserfs',
+    'xfs': 'mkfs.xfs -f'
+}
+
+POSTINST={
+    'UBUNTU':'/etc/xen/shell/gt-reimage/post-inst.d/ubuntu.sh',
+    'DEBIAN':'/etc/xen/shell/gt-reimage/post-inst.d/debian.sh',
+    'TURNKEY32':'/etc/xen/shell/gt-reimage/post-inst.d/turnkey.sh',
+    'ANDROID':'etc/xen/shell/gt-reimage/post-inst.d/android.sh',
+    'FEDORA32':'/etc/xen/shell/gt-reimage/post-inst.d/redhat.sh',
+    'FEDORA64':'/etc/xen/shell/gt-reimage/post-inst.d/redhat.sh',
+    'FEDORA':'/etc/xen/shell/gt-reimage/post-inst.d/redhat.sh',
+    'RHEL':'/etc/xen/shell/gt-reimage/post-inst.d/redhat.sh',
+    'CENTOS32':'/etc/xen/shell/gt-reimage/post-inst.d/redhat.sh',
+    'CENTOS64':'/etc/xen/shell/gt-reimage/post-inst.d/redhat.sh',
+    'GENTOO32':'/etc/xen/shell/gt-reimage/post-inst.d/gentoo.sh',
+    'GENTOO64':'/etc/xen/shell/gt-reimage/post-inst.d/gentoo.sh',
+    'URL':'/bin/false'
+}
+
+# Or-Die (do or die!)
+# Execute arguments. Take last argument as error string
+def ordie (*args):
+    try:
+        return submodule.check_call(args[:-1])
+    except:
+        return fail (args[-1])
+
+# wstring writes a string to file
+def wstring(string,filename):
+    # Right teh filez LOL -LOLCATZ
+    tehfile=open(filename)
+    tehfile.write(string)
+    tehfile.close()
+
+# wstring writes a string to file
+def astring(string,filename):
+    # Right teh filez LOL -LOLCATZ
+    tehfile=open(filename,'a')
+    # Pydocs say both that this should be a no-op
+    # BUT also say that some systems will not seek on their own?
+    # we're just being careful here...
+    tehfile.seek(0,os.SEEK_END)
+    tehfile.write(string)
+    tehfile.close()
+
+# Sets class variables by args
+def cvarargs (cls,cvars,**kwargs):
+    for key in kwargs:
+        if cvars.count(key) > 0:
+            # Assign variable to key where key is an
+            # allowed class variable
+            print("cls.{0}=kwargs[key] ({1})".format(key,kwargs[key]))
+            eval("cls.{0} = kwargs[key]".format(key))
+    pass
+
+class Disk:
+    def __init__(self,**kwargs):
+        # Allowed class variables
+        data=kwargs
+        #        cvarargs(self,[
+        #            'size',
+        #            'location',
+        #            'mntpnt',
+        #            'format',
+        #            'wipe',
+        #            'volname',
+        #            'wipesrc',
+        #            'method'
+        #        ],**kwargs)
+        self.size=data['size']
+        self.location=data['location']
+        self.mntpnt=data['mntpnt']
+        self.ftype=data['ftype']
+        self.wipe=data['wipe']
+        self.volname=data['volname']
+        self.wipesrc=data['wipesrc']
+        self.method=data['method']
+        self.dpathsuffix=None
+        pass
+
+    def devpath(self):
+        dpath=''
+        if self.method=='LVM':
+            dpath="/dev/mapper/{0}-{1}".format(self.location,self.volname)
+        elif self.method=='iSCSI':
+            req=urllib2.urlopen("http://{0}:8080/iscsitadm/target/array002/{1}".format(self.location,self.volname)).read()
+            diskinfo=json.loads(req)
+            print >>sys.stderr, diskinfo
+
+            if type(diskinfo) is dict:
+                iqn=diskinfo['array002/{0}'.format(self.volname)]['iSCSI Name']
+                if not iqn:
+                    return "/dev/disk-not-found"
+                dpath="/dev/disk/by-path/ip-{0}:3260-iscsi-{1}-lun-0".format(self.location,iqn)
+
+                print >>sys.stderr, iqn
+
+                try:
+                    self.check_exists(dpath)
+                except:
+                    # init the device...
+                    subprocess.call(('/usr/bin/iscsiadm','-m','discovery','-t','sendtargets','-p',self.location))
+                    subprocess.call(('/usr/bin/iscsiadm','-m','node','-l','-T',iqn,'-p',"{0}:3260".format(self.location)))
+                    self.check_exists(dpath)
+            else:
+                return "/dev/disk-not-found"
+                #dpath="/dev/disk-not-found"
+        else:
+            return fail("Disk method invalid")
+        if self.dpathsuffix:
+            dpath="{0}{1}".format(dpath,self.dpathsuffix)
+        return dpath
+
+    def check_exists(self,path):
+        si=os.stat(path)
+        #self.devpath())
+        if not stat.S_ISBLK(si[0]):
+            fail ('Block device does not exist')
+
+    def create(disk):
+        if not os.path.exists(disk.devpath()):
+            # Create disks.
+            try:
+                print "Creating disk.\n"
+                print >>sys.stderr, "Creating disk.\n"
+                ex=('/etc/xen/shell/gt-reimage/disk.d/{0}'.format(disk.method),
+                    disk.size,
+                    disk.volname,
+                    disk.location )
+                print >>sys.stderr, "Calling '{0}'\n".format(ex)
+                sp=subprocess.Popen(ex, stdout=subprocess.PIPE )
+                soo=sp.communicate()
+                print >>sys.stderr, "Created disk. \nSTDOUT:\n({0})\nSTDERR:\n{1}\n".format(soo[0],soo[1])
+            except:
+                #CalledProcessError:
+                fail ("Could not create disk.")
+
+            disk.check_exists(disk.devpath())
+
+            # Wiping is provided as a security measure to prevent
+            # data exposure.  Simply zero'ing blocks is sufficient
+            # unless users have physical access to the device.
+
+            if disk.wipe > 0:
+                print "Wiping block device (may take a while)\n"
+                sp0=subprocess.Popen(('dd',"if={0}".format(disk.wipesrc),'bs=8M'),stdout=subprocess.PIPE)
+                sp1=subprocess.Popen(('pv'),stdin=sp0.stdout,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                sp2=subprocess.Popen(('dd','of={0}'.format(disk.devpath()),'bs=8M'),stdin=sp1.stdout,stdout=subprocess.PIPE)
+                # Get status updates from 'pv'
+                while not sp1.poll():
+                    print sp1.stderr
+                disk.wipe-=1
+
+    def format(disk):
+        disk.create()
+        ordie(('umount',"/mnt/{0}".format(disk.volname)),"Umount unsuccessful")
+
+        if disk.partition is None or disk.partition == 0:
+            print "No partition."
+        else:
+            # make partition
+            ordie(("parted","-s",disk.devpath(),"mklabel","msdos"),"Mklabel failed")
+            ordie(("parted","-s",disk.devpath(),"mkpart","primary","0",disk.partition),"Mkpart failed")
+
+            # toss it into the device manager (multipath required)
+            ordie(("kpartx","-a","{0}p1".format(disk.devpath())),"Kpartx failed")
+
+            # change the device path
+            disk.dpathsuffix="p1"
+
+        # Set the FSTYPE based on the user's input.
+        #eval 'declare FSTYPE=$'`print "$fschoice" | tr '/[:lower:]/' '/[:upper:]/'`
+        if not MKFS[disk.ftype]:
+            fail ('Filesystem choice invalid.')
+
+        print "Building filesystem ($FSTYPE) with '${MKFS[$FSTYPE]}'"
+        sp=subprocess.Popen((MKFS[disk.ftype],disk.devpath()), stdout=subprocess.PIPE)
+        while not sp.poll():
+            # While running, keep snagging output
+            print sp.stdout.read()
+        # Get the remains of the buffer, if anything..
+        sp.stdout.read()
+
+    # Optionally accept parent argument to mount under a sub-dir.
+    def mount(self,parent=None):
+        self.check_exists(self.devpath())
+
+        # mkdir
+        ordie(("mkdir","-p","{0}/{1}".format(parent,self.mntpnt)),"Could not make dir")
+        # mount
+        ordie(("mount",self.devpath,"{0}/{1}".format(parent,self.volname)),"Could not mount dir")
+
+
+
+# My shift from a struct to a class-based system...
+dsklst=[
+    Disk(
+        method='iSCSI',
+        size= DISKMAP[sizemem],
+        location= '10.1.0.1',
+        mntpnt= '/',
+        ftype= fschoice.lower(),
+        wipe= 1,
+        volname= guestname,
+        wipesrc= '/dev/zero',
+        partition= partchoice
+    ),
+    Disk(
+        method='LVM',
+        size= sizemem*2,
+        location= 'XenSwap',
+        mntpnt= 'none',
+        ftype= 'swap',
+        wipe= 1,
+        volname= "{0}swap".format(guestname),
+        wipesrc= '/dev/zero',
+        partition = None
+    )
+]
+
+# Sanity checks...
+if guestname.find("..") != -1:
+    fail ("Guest '{0}' specified is invalid".format(guestname))
+if guestname.find("/") != -1:
+    fail ("Guest '{0}' specified is invalid".format(guestname))
+
+if not DISKMAP[sizemem]:
+    fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
+
+instdir="/mnt/{0}".format(guestname)
+rootmounted=False
+
+# Format and mount disks
+for disk in dsklst:
+    print "Formatting filesystem.\n"
+    disk.format()
+
+    if disk.mntpnt == '/':
+        #rootdev="/dev/mapper/{0}-{1}".format(disk.location,disk.volname)
+        print "Mounting filesystem"
+        disk.mount(instdir)
+        rootmounted=True
+
+if not rootmounted:
+    fail ("New root filesystem not found.")
+
+# CH DIR to the guest dir
+print "Changing directory"
+os.chdir(instdir)
+
+if not OSFAMILY:
+    fail ('OS not defined.')
+
+print "Beginning installation for ${OSFAMILY}-${VERSION} ($distro) via $METHOD from $MIRROR"
+sp=None
+if method=='debootstrap':
+    print "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
+    sp=subprocess.Popen(('debootstrap','--arch',OSARCH,VERSION,instdir,MIRROR))
+elif method=='udebootstrap':
+    print "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
+    sp=subprocess.Popen(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',OSARCH,VERSION,instdir,MIRROR))
+elif method=='rinse':
+    print "Executing rinse ($OSARCH $VERSION /mnt/${guestname} $MIRROR)"
+    sp=subprocess.Popen(('rinse','--arch',OSARCH,'--distribution',"fedora-core-{0}".format(VERSION),"--directory {0}".format(instdir)))
+elif method=='image':
+    print "Fetching Image: $MIRROR/$distro-$OSARCH.tar.bz2"
+    sp0=subprocess.Popen(('wget','-O','-',"{0}/{1}-{2}.tar.bz2".format(MIRROR,distro,OSARCH)),stdout=subprocess.PIPE)
+    sp=subprocess.Popen(('tar','jx'),stdin=sp0.stdout,stdout=subprocess.PIPE)
+    sp.wait()
+#elif method=='image2':
+#	for a in ${distributions[@]}; do
+#		print "Checking $a for $distro"
+#		# only break if the choice is acceptable
+#		if [ "${a:0:${#distro}}" == "$distro" ]; then
+#		IMGFILE=`print "$a" | cut -d- -f3-`
+#
+#    print "Fetching Image: $MIRROR/$IMGFILE"
+#    TYPE=None
+#    if IMGFILE.endswith("bz2"):
+#        TYPE='j'
+#    elif IMGFILE.endswith("gz"):
+#        TYPE=z
+#    if not TYPE:
+#        sys.exit(1)
+#
+#    sp0=subprocess.Popen(("wget","-O","-","{0}/{1}".format(MIRROR,IMGFILE)),stdout=subprocess.PIPE)
+#    sp1=subprocess.Popen(("tar","{0}x".format(TYPE)),stdin=sp0.stdout)
+#    sp1.wait()
+#elif method=='user-image':
+#    print "Attempting to fetch: $MIRROR"
+#
+#    TYPE=None
+#    if IMGFILE.endswith("bz2"):
+#        TYPE='j'
+#    elif IMGFILE.endswith("gz"):
+#        TYPE=z
+#    if not TYPE:
+#        sys.exit(1)
+#
+#    sp0=subprocess.Popen(("wget","-O","-","{0}".format(MIRROR)),stdout=subprocess.PIPE)
+#    sp=subprocess.Popen(("tar","{0}x".format(TYPE)),stdin=sp0.stdout)
+#sp.wait()
+
+wstring(useracct, "{0}/etc/hostname".format(instdir))
+
+TTfstabFH=open('/etc/xen/shell/gt-reimage/fstab.template')
+TTfstab=''
+for line in TTfstabFH:
+    TTfstab+=line
+TTfstabFH.close()
+wstring(string.Template(TTfstab).safe_substitute(storage), "{0}/etc/fstab".format(instdir))
+
+wstring("127.0.0.1 localhost {0}".format(guestname),"{0}/etc/hosts".format(instdir))
+
+
+#cp /root/skel/fstab "/mnt/${guestname}/etc/"
+#cp /root/skel/resolv.conf "/mnt/${guestname}/etc/"
+
+if not POSTINST[OSFAMILY]:
+    fail ('Post-install script not found.')
+
+# Run the post-inst script, further-cleaning ENV
+subprocess.Popen(POSTINST[OSFAMILY], env={
+    guestname:guestname,
+    IPADDRESS:IPADDRESS,
+    IPGATEWAY:IPGATEWAY,
+    IPNETMASK:IPNETMASK,
+    PasswdHash:PasswdHash,
+    PATH:"/bin:/sbin:/usr/bin:/usr/sbin" })
+
+print "Unmounting filesystem"
+os.chdir("/tmp")
+ordie(("fuser","-k","-9","-c",instdir),"Could not fuser -k")
+subprocess.check_call(("sync"))
+subprocess.check_call(("sync"))
+
+ordie(("umount",instdir),"Could not umount")
+

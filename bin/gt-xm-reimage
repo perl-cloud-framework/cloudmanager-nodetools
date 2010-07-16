@@ -1,0 +1,328 @@
+#!/bin/bash
+
+# Block Ctrl-C and other naughty signals - All resistence is futile!
+trap '' 1
+trap '' 2
+trap '' 15
+
+logger -t gt-reimage "[$UID] Started."
+
+function fail {
+	logger -t gt-reimage "[$UID] $1"
+	echo $1
+	exit 1
+}
+
+. /usr/bin/gt-config-loader
+
+echo ""
+echo "------------------------------------------------------"
+echo " Make sure that you have valid BACKUPS before"
+echo " continuing with this tool."
+echo ""
+echo "           THIS TOOL WILL ERASE YOUR DATA."
+echo ""
+echo " GrokThis.net assumes no responsibility for any lost"
+echo " data or damage as a result of your use of this tool."
+echo "------------------------------------------------------"
+echo ""
+read -p "Continue? [N/y]" yn
+if [ ! "$yn" == "Y" ] && [ ! "$yn" == "y" ]; then
+	echo "Exiting by user request."
+	exit 1
+fi; yn=''
+
+guestname=$1
+useracct=$2
+
+grep '\.\.' <(echo "$guestname") 2>&1 > /dev/null && fail "Guest specified is invalid (1), $guestname"
+grep '/' <(echo "$guestname") 2>&1 > /dev/null && fail "Guest specified is invalid (2)"
+
+echo "Using account id: $guestname"
+
+# Find the user's home directory
+#homedir=`getent passwd "$useracct" | cut -d: -f6`
+
+# Securely generate a password and store it into variables
+Passwd=`makepasswd --minchars=7 --maxchars=10 --crypt-md5 | sed 's/ \+/\t/;'`
+PasswdHash=`cat <<EOF | cut -f2
+${Passwd}
+EOF`
+PasswdString=`cat <<EOF | cut -f1
+${Passwd}
+EOF`
+
+sizemem=$3
+echo "Using memory size: $sizemem"
+
+dobreak=
+distro=
+while [ -z "$distro" ] || [ "$distro" == "l" ]; do
+	read -p "Distribution Choice ('l' to list): " distro
+	if [ "$distro" == "l" ]; then
+		for x in ${distributions[@]}; do
+			echo "$x" | cut -d- -f1-2
+		done
+		continue
+	fi
+	for a in ${distributions[@]}; do
+		# only break if the choice is acceptable
+		sdistro=`echo "$a" | cut -d- -f1-2 | cut -d= -f1`
+		idistro=`echo "$distro" | cut -d- -f1-2 | cut -d= -f1`
+        [ "$sdistro" == "$idistro" ] &&
+			echo "Choose $sdistro." && dobreak=1
+	done
+	[ -z $dobreak ] && distro='l' # force re-prompt
+done
+
+clear
+function partitioninfo {
+cat <<EOF
+ Customers now have the option to partition their block device.
+ Please note that this feature is EXPERIMENTAL and is not recommended.
+
+ In order to facilitate the highest possible performance, it must be warned
+ that it is against our terms of service to operate a swap partition from
+ this space, or from a loop-back device. You will instead receive a dedicated
+ device (sdb1) for swap, which will be optimized for this operation.
+EOF
+}
+partitioninfo
+read -p "Partition? [[1mN[0m/y]: " partchoice
+if [ "$partchoice" == "y" ] || [ "$partchoice" == "Y" ]; then
+	# unset partchoice so we can prompt for a number.
+	unset partchoice
+	partchoice=
+	dobreak=
+	while [ -z "$partchoice" ] || [ "$partchoice" == "?" ] ; do
+		echo ""
+		echo "To partition, you must specify the root partition size."
+		echo "If you wish not to partition, simply enter '.'"
+		echo ""
+		read -p " Root (/) partition size in Megabytes: " partchoice
+		if [ "$partchoice" == "." ] ; then
+			partchoice=0
+			break
+		fi
+
+		if [ -n "$partchoice" ] && [ "$partchoice" -gt 0 ] ; then
+			# only break if the choice is acceptable
+			echo "Root partition will be $partchoice megabytes." \
+				&& dobreak=1
+		else
+			echo "Must specify an integer [1-2147483648]"
+		fi
+		# If we should break, reset partchoice, forcing a loop.
+		# otherwise, partchoice will be empty and will loop.
+		[ -z $dobreak ] && partchoice='?'
+	done
+else
+	partchoice=0
+fi
+
+dobreak=
+fschoice=
+while [ -z "$fschoice" ] || [ "$fschoice" == "l" ]; do
+	read -p "Filesystem Choice ('l' to list): " fschoice
+	if [ "$fschoice" == "l" ]; then
+		echo ${filesystems[@]}
+		continue
+	fi
+
+	fschoice=`echo "$fschoice" | tr '/[:upper:]/' '/[:lower:]/'`
+	for a in ${filesystems[@]}; do
+		# only break if the choice is acceptable
+		[ "$a" == "$fschoice" ] && echo "Choose $a." && dobreak=1
+	done
+	[ -z $dobreak ] && fschoice='l' # this is enough to force a re-prompt
+done
+
+[ -z $ARCH ] && ARCH=$(uname -m) # `arch`
+
+# x86_64 and amd64
+if [ $ARCH == "x86_64" ] || [ $ARCH == "amd64" ]; then
+	ARCHBITS=64
+	MULTIARCH=1
+	ARCHMAP=([32]='i386' [64]='amd64')
+
+# everything else 
+else
+	# determine architecture's sizeof(int)
+	# an apparent bug in python 2.5.1c1
+	# shows that ctypes.sizeof(c_int)
+	# is wrong on some 64-bit platforms.
+	# so, instead, we brute-force it with
+	# sys.maxint -- which is okay.
+	cat <<-EOF | sed 's/^\t//;' | python
+	import sys
+	for mul in range(16):
+	  if sys.maxint >> 2**mul == 0:
+	    sys.exit(2**mul)
+	EOF
+	ARCHBITS=$?
+	ARCHMAP=([$ARCHBITS]=$ARCH)
+fi
+
+# If we are multiarch, offer both 32-bit and ARCHBITS support
+# ARCHBITS is usually 64-bit when multi-arch.
+if [ -n $MULTIARCH ]; then
+	# escapes set ARCHBITS bold to indicate default
+	read -p "OS bits [[1m${ARCHBITS}[0m/32]: " bits
+
+	# Blank input should be 64, the default, as above
+	[ -z "$bits" ] && bits=64
+
+	# Changed the following to default to $ARCHBITS if
+	# the input was not 32 as a (lame) way to
+	# sanitize input.
+	# TODO: Loop upon invalid input rather than make assumptions
+	[ ! "$bits" -eq "32" ] && bits=$ARCHBITS
+else
+	bits=$ARCHBITS
+fi
+
+# Set the OSARCH to that the user selected.
+OSARCH=${ARCHMAP[$bits]}
+
+# We prompt the user to set their IP address if this isn't
+# already specified in their configuration file.
+# TODO: Have this update the configuration file?
+while [ -z $IPADDRESS ]; do
+	# Attempt to find the IP addr in the guest's configuration.
+	IPADDRESS=$4
+
+	# Otherwise, prompt.
+	[ -z $IPADDRESS ] && read -p "IP Address: " IPADDRESS
+	[ -z $IPADDRESS ] && continue
+
+	[ -z $IPNETMASK ] &&
+		IPNETMASK=`ipcalc -n "${IPADDRESS}/${DEFAULT_NETMASK}" |
+			sed -n '/^Netmask/{ s/\s\+/\t/g; p }' | cut -f2`
+
+	[ -z $IPGATEWAY ] &&
+		IPGATEWAY=`ipcalc -n "${IPADDRESS}/${IPNETMASK}" |
+			sed -n '/^HostMin/{ s/\s\+/\t/g; p }' | cut -f2`
+
+
+	# ipcalc will incorrectly give us 192.168.1.1 by default if the address
+	# given is not valid.  However, this gateway could be valid
+	# if the hostname is in 192.168.X.X...
+	if [ "$IPGATEWAY" == "192.168.1.1" ] &&
+	( ! echo "$IPADDRESS" | grep '^192.168.' ); then
+		echo "Invalid address."
+		continue
+	fi
+done
+
+#logger -t gt-reimage "[$UID][1]: Displaying $guestname, $sizemem"
+#logger -t gt-reimage "[$UID][2]: Displaying ${SWAPMAP[$sizemem]}, ${DISKMAP[$sizemem]}, $fschoice"
+
+env - cat <<EOF
+
+------------------------------------------------------
+ Please Confirm Your Selection:
+
+ Xen Guest: $guestname
+ RAM Size: $sizemem
+ Swap Size: ${SWAPMAP[$sizemem]}
+ Disk Size: ${DISKMAP[$sizemem]}
+ Filesystem: $fschoice
+
+ Operating System: $distro, ${bits}-bit
+------------------------------------------------------
+
+EOF
+read -p "Continue? [N/y]" yn
+if [ -z $yn ] || [ ! $yn == "Y" ] && [ ! $yn == "y" ]; then
+	echo "Exiting by user request."
+	exit 1
+fi; yn=''
+
+if [ -e "/dev/mapper/${GUEST_DISK_DISKGROUP}-${guestname}" ]; then
+	echo ""
+	echo "There is already an active OS for account $guestname"
+	echo "continuing will OVERWRITE all data in this account."
+	echo ""
+	read -p "Are you sure you want to continue? [N/y]" yn
+	if [ ! $yn == "Y" ] && [ ! $yn == "y" ]; then
+		echo "Exiting by user request."
+		exit 1
+	fi
+fi
+
+# Set the OSFAMILY based on the user's input.
+eval 'declare OSFAMILY=$'`echo "$distro" | sed 's/\(-\|=\).*//;' | tr '/[:lower:]/' '/[:upper:]/'` ||
+	fail "Could not set OSFAMILY"
+
+VERSION=`echo "$distro" | cut -d- -f2`
+METHOD=${METHODS[$OSFAMILY]}
+MIRROR=${MIRRORS[$OSFAMILY]}
+
+# If the distribution "URL" is defined in distributions.lst,
+# then set the mirror to that after the = provided by the user.
+[ -n "$URL" ] &&
+	[ "$OSFAMILY" -eq "$URL" ] &&
+		MIRROR=`echo "$distro" | cut -d= -f2`
+
+#logger -t gt-reimage "[$UID][4]: Switching to root."
+#logger -t gt-reimage "[$UID][4.1] Passing $VERSION, $METHOD, $MIRROR"
+#logger -t gt-reimage "[$UID][4.2] Passing $homedir, $useracct, $guestname"
+#logger -t gt-reimage "[$UID][4.3] Passing $OSARCH, $distro, $IMGFILE"
+#logger -t gt-reimage "[$UID][4.4] Passing $IPADDRESS, $IPGATEWAY, $IPNETMASK"
+
+IMGF=
+for a in ${distributions[@]}; do
+    #echo "Checking $a for $distro"
+    # only break if the choice is acceptable
+    if [ "${a:0:${#distro}}" == "$distro" ]; then
+    IMGF=`echo "$a" | cut -d- -f3-`
+    break
+    fi
+done
+
+# Run the following as root, and clear the env!
+env - \
+	IPADDRESS="$IPADDRESS" \
+	IPGATEWAY="$IPGATEWAY" \
+	IPNETMASK="$IPNETMASK" \
+	fschoice="$fschoice" \
+	distro="${distro}" \
+	OSARCH="$OSARCH" \
+	OSFAMILY="$OSFAMILY" \
+	VERSION="$VERSION" \
+	MIRROR="$MIRROR" \
+	METHOD="$METHOD" \
+	IMGF="$IMGF" \
+	PasswdHash="$PasswdHash" \
+	useracct="$useracct" \
+	guestname="$guestname" \
+	sizemem="$sizemem" \
+	partchoice="$partchoice" \
+	homedir="$homedir" sudo /usr/bin/gt-xm-reimage0.py
+
+if [ ! $? -eq 0 ]; then
+    echo "Installation failed."
+    exit 1
+fi
+
+# We print this to the user, while also storing for our administrator
+# as an encrypted file.  The encryption assumes that the admin has
+# executed: gpg --genkey, creating a keypair for $GPG_IDENTITY,
+# or has at least imported a public key for $GPG_IDENTITY.
+# Note: GPG_IDENTITY defaults to admin@localhost.
+HOME='/home/gt-gpg/'
+USER='gt-gpg'
+env - cat <<EOF #| tee >(sudo -u gt-gpg gpg -e -r $GPG_IDENTITY -a > /home/gt-gpg/incoming/${useracct}.passwd)
+
+--------------------------------------------------------------------------
+
+Re-image complete.  Your system is now running ${distro}.
+
+IP Address(es): ${IPADDRESS} 
+Admin Username: root
+Admin Password: ${PasswdString} 
+
+It will now be necessary to issue the "boot" command to start your server.
+
+--------------------------------------------------------------------------
+EOF

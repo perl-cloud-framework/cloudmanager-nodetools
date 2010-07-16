@@ -1,0 +1,4 @@
+#!/bin/bash
+xm vcpu-set 0 1
+xm vcpu-pin 0 0 0
+for guest in $(xenstore-ls /vm | sed -n '/name =/{ s/.*"\(.*\)"/\1/; /^Domain-0/d; p; }'); do xm vcpu-pin $guest all "1-63"; done

@@ -1,0 +1,15 @@
+#!/bin/bash
+%# Title: gt-xm-reschedule
+%# Author: Eric Windisch
+%# License: AGPLv3
+%# Version: 1.9
+xm vcpu-set 0 1
+xm vcpu-pin 0 0 0
+echo "$0 version 1.9"
+for guest in $(xenstore-ls /vm | sed -n '/name =/{ s/.*"\(.*\)"/\1/; /^Domain-0/d; p; }'); do
+	echo -n "Setting parameters for guest id: $guest ."
+	xm vcpu-pin $guest all "1-63"; echo -n ".";
+	xm sched-credit -d $guest -c 50; echo -n ".";
+	echo "Done"
+done
+echo "Each guest now limited to CPUs 1-63 & 50% of any core"

@@ -1,0 +1,5 @@
+/dev/sda1       /       ext3     defaults       0       1
+/dev/sda2       none    swap    sw                      0       0
+none		/dev/pts    devpts  mode=0620       0       0
+proc            /proc   proc    default 0       0
+none            /sys    sysfs   default 0       0

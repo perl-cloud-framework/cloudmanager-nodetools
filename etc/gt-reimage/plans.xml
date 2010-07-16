@@ -1,0 +1,60 @@
+<catalog>
+<defaults>
+ <disk unit="G"/>
+ <memory unit="M"/>
+</defaults>
+
+<group name="village">
+	<plan>
+	 <name>small</name>
+	 <memory>64</memory>
+	 <swap>128</swap>
+	 <disk>4</disk>
+	</plan>
+
+	<plan>
+	 <name>medium</name>
+	 <memory>128</memory>
+	 <swap>256</swap>
+	 <disk>8</disk>
+	</plan>
+
+	<plan>
+	 <name>large</name>
+	 <memory>256</memory>
+	 <swap>512</swap>
+	 <disk>16</disk>
+	</plan>
+</group>
+
+<group name="grokthis">
+	<plan>
+	 <name>small</name>
+	 <memory>96</memory>
+	 <swap>192</swap>
+	 <disk>4</disk>
+	</plan>
+
+	<plan>
+	 <name>medium</name>
+	 <memory>128</memory>
+	 <swap>256</swap>
+	 <disk>8</disk>
+	</plan>
+
+	<plan>
+	 <name>large</name>
+	 <memory>256</memory>
+	 <swap>512</swap>
+	 <disk>16</disk>
+	</plan>
+
+	<plan>
+	 <name>xlarge</name>
+	 <memory>512</memory>
+	 <swap>1024</swap>
+	 <disk>32</disk>
+	</plan>
+</group>
+
+</catalog>

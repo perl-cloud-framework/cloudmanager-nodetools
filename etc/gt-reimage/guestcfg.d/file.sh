@@ -1,0 +1,1 @@
+cat > ${GUESTCFGDIR}/${Guestname}

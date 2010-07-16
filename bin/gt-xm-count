@@ -1,0 +1,3 @@
+#!/bin/bash
+# TODO: configuration variables for dividend
+xm list | sed '1d; /^Domain-0/d;' | tr -s '/ /' '/,/' | cut -d, -f3 | sed 's/$/ +/; 1{ s/+$//; }; ${ s/$/ 64 \/ p/; };' | dc

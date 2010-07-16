@@ -1,0 +1,40 @@
+Thank you for ordering!
+
+Information for your new Xen VPS account has been provided below.
+
+== Management Console ==
+
+We have a management console available for you.  This allows you access to "hard" reboots, an emergency recovery console (if you somehow lock yourself out of SSH), and allows you to reimage your VPS with a new Operating System.
+
+Please note that the following details are for SSH access.
+
+Hostname: ${Hostname}
+Username: ${Username}
+Password: ${Password}
+
+== VPS Access Details ==
+
+
+== OS Re-Installation ==
+
+You may use our mangement console to re-image/install your OS if you choose. A root username, password, and IP address will be assigned to you during the reimaging process and will be printed to the screen. This information will only be provided once, and cannot be retrieved other than to (again) reinstall the OS.
+
+== SMTP ==
+
+If you plan to configure an SMTP (mail) server, please be careful not to create an open relay. If we find spam originating from your account, we will suspend it. Make sure to check your configuration against at least the following webpage:
+
+http://www.abuse.net/relay.html
+
+== DNS ==
+
+If you desire a reverse DNS entry, please contact our support department.  Please also note that we offer DNS registration services. Consider us if you need to purchase a new domain name or wish to transfer your existing registration.
+
+== Getting Support ==
+
+Our support can be contacted via email, support@grokthis.net, or via instant messenger. We are available via several messaging services, but do recommend AOL Instant Messenger (AIM) for emergency contact as it will automatically reach our on-call pager.
+
+Email: support@grokthis.net
+AIM: GrokThisSupport
+Yahoo: GrokThisNet
+Jabber: support@grokthis.net
+

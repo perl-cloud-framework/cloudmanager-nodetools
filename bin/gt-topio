@@ -1,0 +1,69 @@
+#!/bin/bash
+#% Title: gt-topio
+#% Author: Eric Windisch
+#% License: MIT
+
+# default value...
+count=20
+#expr="p;"
+filter='.'
+
+set -- `getopt c:d:e: $@` >/dev/null 2>&1
+while [ $# -gt 0 ]
+do
+	case "$1" in
+		-c) count=$2; shift ;;
+		-d) device=$2; shift ;;
+		-e) filter=$2; shift ;;
+		--) shift; break;;
+		-*)
+			echo >&2 \
+			"usage: $0 [-c count] [-e expr] [-d device] [device...]"
+			exit 1;;
+		*) break;;
+	esac
+	shift
+done
+# push device back into $@
+# so we can easily just pass this along
+# and keep it in the same array as other devs.
+set -- $@ $device
+
+#filter="sed -ne '$expr'"
+
+function topn {
+iostat="iostat -d"
+count=$1; shift;
+filter=$1; shift;
+
+while [ $# -gt 0 ];
+do
+device=$1
+if [ ! -z "$device" ]; then
+	if [ ! -e "/dev/$device" ]; then
+		echo "Specified device ($device) not found.\n" >&2
+		exit 1
+	fi
+	iostat="$iostat $device"
+
+fi
+shift
+done
+
+echo "IO/s   Blk_read/s   Blk_wrtn/s   Blk_read   Blk_wrtn   Device"
+for line in $($iostat | grep $filter | sed '1,3d; s/^\(\w\+\|dm-\w\+\)\s\+\(.*\)/\2\t\1/' | sort -nr | head -n$count | sed 's/\s\+/,/g'); do
+	dm=$(echo $line | cut -d, -f6 | cut -d- -f2);
+	dname=$(dmsetup info -c --noheadings -j 253 -m $dm | cut -d: -f1);
+	echo $line |
+		sed "s/dm-$dm/$dname/; s/,/\t\t/g;";
+done
+}
+
+if [ $# -gt 0 ] && [ $count -ge $# ]; then
+	echo "IO statistics:"
+else 
+	echo "Top $count IO users:"
+fi
+
+topn $count $filter $@ | column -t
+

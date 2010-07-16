@@ -1,0 +1,27 @@
+#  -*- mode: python; -*-
+#  vim:set syntax=python
+#import xml.dom.minidom
+#from xml import xpath
+#xmldoc=xml.dom.minidom.parse('/etc/xen/shell/gt-reimage/plans.xml')
+
+xen_shell_plan=['${Group}','${Size}']
+xen_shell_ipaddress='${IPAddress}'
+xen_shell_ipgateway='${IPGWAddress}'
+xen_shell_ipnetmask='${IPCIDR}'
+
+name = '${Guestname}'
+kernel = '${Home}/vmlinuz'
+#ramdisk = '${Home}/initrd.img'
+
+memory = '${Memory}'
+#memory = xpath.Evaluate(\"/catalog/group[@name='%s']/plan[name='%s']/memory\" % (xen_shell_plan[0], xen_shell_plan[1]), xmldoc)[0].childNodes[0].nodeValue
+
+vif = [ \"vifname=%s,ip=%s\" % (name,xen_shell_ipaddress) ]
+disk = [ 'phy:mapper/${GUEST_DISK_DISKGROUP}-${Guestname},sda1,w', 'phy:mapper/${GUEST_DISK_SWAPGROUP}-${Guestname}${GUEST_DISK_SWAPVOL_POSTFIX},sda2,w' ]
+root = '/dev/sda1 ro'
+
+# Sets runlevel 3.
+extra = '3 console=xvc0'
+vcpus = 1
+
+xen_shell='${Username}'

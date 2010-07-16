@@ -1,0 +1,31 @@
+
+=====================================================
+Requirements:
+=====================================================
+
+Tested on Debian Etch.  Other systems, YMMV.
+We have NOT yet migrated to Lenny - 2009/10/05
+
+bash 3.1 or higher (tested)
+pipe viewer, (debian package pv, or http://www.ivarch.com/programs/pv.shtml)
+makepasswd, (http://packages.debian.org/stable/admin/makepasswd.html)
+ipcalc, (debian package ipcalc)
+xmlstarlet (debian package xmlstarlet)
+xen-shell 1.4 or higher, or grokthis-xen-shell 1.5 or higher.
+
+=====================================================
+Easy Installation (debian etch):
+=====================================================
+WARNING: This is designed for a fresh, minimum system
+install. This may remove any packages that you have
+installed above and beyond the base system. This will
+also remove your running kernel.
+-----------------------------------------------------
+ dpkg --clear-selections
+ dpkg --set-selections < debian/dpkg-selections
+ dselect install
+
+ cp -p debian/sudoers /etc/
+
+ make install 
+
