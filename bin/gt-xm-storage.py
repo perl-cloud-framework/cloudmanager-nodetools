@@ -53,7 +53,7 @@ cmdtable={
     #'appendf': astring,
     #'extract': do_extract,
     #'urlextract': do_urlextract,
-    'rawriteurl': do_rawriteurl,
+    'rawrite': do_rawriteurl,
     'mkfs': do_format,
     'debootstrap': do_debootstrap,
     'peekfs': do_peekfs
