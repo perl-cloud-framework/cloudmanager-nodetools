@@ -331,6 +331,8 @@ class Disk:
         if sp.wait() != 0:
             fail ("Mount fail.")
 
+        return mntpnt
+
 # Sanity checks...
 if guestname.find("..") != -1:
     fail ("Guest '{0}' specified is invalid".format(guestname))
@@ -341,8 +343,8 @@ if not DISKMAP[sizemem]:
     fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
 
 # My shift from a struct to a class-based system...
-dsklst=[
-    Disk(
+dsklst={
+    '/': Disk(
         method='iSCSI',
         size= DISKMAP[sizemem],
         location= '10.1.0.1',
@@ -356,7 +358,7 @@ dsklst=[
         dev="/dev/sda1",
         options="defaults,noatime"
     ),
-    Disk(
+    'swap': Disk(
         method='LVM',
         size= '{0}M'.format(int(sizemem)*2),
         location= 'XenSwap',
@@ -370,14 +372,14 @@ dsklst=[
         dev="/dev/sdb1",
         options="defaults"
     )
-]
+}
 
 instdir=os.path.join("/mnt/",guestname)
 
 def do_format:
     rootmounted=False
     # Format and mount disks
-    for disk in dsklst:
+    for mntpnt,disk in dsklst.items():
         print "Formatting filesystem.\n"
         disk.format()
 
@@ -415,7 +417,9 @@ def do_extract(uri, dest):
     cpid=os.fork()
     if cpid == 0:
         try:
-            os.chroot(dsklst[0].mntpnt)
+            mntpnt=dsklst['/'].mount()
+            os.chdir(mntpnt)
+            os.chroot(mntpnt)
             uh=open(uri)
             tf=tarfile.open(mode='r|*',fileobj=uh)
             tf.extractall()
@@ -439,7 +443,9 @@ def do_urlextract(url, dest):
     cpid=os.fork()
     if cpid == 0:
         try:
-            os.chroot(dsklst[0].mntpnt)
+            mntpnt=dsklst['/'].mount()
+            os.chdir(mntpnt)
+            os.chroot(mntpnt)
             uh=urllib2.urlopen(url)
             tf=tarfile.open(mode='r|*',fileobj=uh)
             tf.extractall()
@@ -462,9 +468,12 @@ def do_rawriteurl(url, dest):
     cpid=os.fork()
     if cpid == 0:
         try:
-            ddof=open(dsklst[0].devpath(),'w+b')
+            ddof=open(dsklst['/'].devpath(),'w+b')
 
-            os.chroot(dsklst[0].mntpnt)
+            mntpnt=dsklst['/'].mount()
+            os.chdir(mntpnt)
+            os.chroot(mntpnt)
+
             uh=urllib2.urlopen(url)
             tf=tarfile.open(mode='r|*',fileobj=uh)
             ddif=tf.extractfile(tf.next)
