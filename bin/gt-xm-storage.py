@@ -407,8 +407,53 @@ def do_debootstrap:
         print >>sys.stderr, "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
         subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',OSARCH,VERSION,instdir,MIRROR),stdout=sys.stdout)
 
-@Alarm
-@Chroot
+# Basic Time class
+class Time(object):
+    def seconds(cnt):
+        return cnt
+    def minutes(cnt):
+        return 60*cnt
+    def hours(cnt):
+        return minutes(1)*60*cnt
+    def hour():
+        return hours(1)
+    def days(cnt):
+        return hours(1)*24*cnt
+    def months(cnt):
+        return int(days(1)*30.5*cnt)
+    def years(cnt):
+        return months(1)*cnt
+
+# Define a forker!
+class Fork(object):
+    def __init__ (self, timeout=None):
+        self.timeout = timeout if timeout
+
+    def __call__(self,f):
+        def wrapper_f(*args):
+            f(*args)
+            # Extract a tarball
+            cpid=os.fork()
+            if cpid == 0:
+                try:
+                    f(*args)
+                except:
+                    os._exit(1)
+                os._exit(0)
+
+            if self.timeout:
+                signal.signal(signal.SIGALRM, stopextract)
+                signal.alarm(self.timeout)
+
+            cexit=os.waitpid(child)
+
+            if self.timeout:
+                signal.alarm(0)
+
+            return True if cexit == 0 else False
+        return wrapper_f
+
+@Fork(timeout=1800)
 def do_extract(uri, dest):
     def stopextract(signum,frame):
         raise IOError('Took longer than 60 minutes!')
@@ -433,8 +478,7 @@ def do_extract(uri, dest):
     signal.alarm(0)
     return True if cexit == 0 else False
 
-@Alarm
-@Chroot
+@Fork
 def do_urlextract(url, dest):
     def stopextract(signum,frame):
         raise IOError('Took longer than 60 minutes!')
@@ -459,7 +503,7 @@ def do_urlextract(url, dest):
     signal.alarm(0)
     return True if cexit == 0 else False
 
-@Alarm
+@Fork
 def do_rawriteurl(url, dest):
     def stopextract(signum,frame):
         raise IOError('Took longer than 60 minutes!')
