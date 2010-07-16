@@ -54,7 +54,7 @@ cmdtable={
     'extract': do_extract,
     'urlextract': do_urlextract,
     'rawriteurl': do_rawriteurl,
-    'format': do_format
+    'format': do_format,
     'debootstrap': do_debootstrap
 }
 
