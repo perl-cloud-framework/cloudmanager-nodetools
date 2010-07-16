@@ -408,12 +408,13 @@ class Fork(object):
             def timeout(signum,frame):
                 raise IOError('Took longer than {0} seconds!'.format(self.timeout))
 
-            f(*args)
-            # Extract a tarball
-            cpid=os.fork()
-            if cpid == 0:
+            fifo=os.mkfifo('/tmp/'+argv[0]+'.ipc')
+            jack=os.fork()
+            if jack == 0:
                 try:
-                    f(*args)
+                    fee=open(fifo,'w')
+                    fee.write(f(*args))
+                    fee.close()
                 except:
                     os._exit(1)
                 os._exit(0)
@@ -427,7 +428,13 @@ class Fork(object):
             if self.timeout:
                 signal.alarm(0)
 
-            return True if cexit == 0 else False
+            fum=open(fifo,'r')
+            jackret=fum.read()
+            if len(jackret) == 0:
+                return True if cexit == 0 else False
+            else:
+                return jackret
+
         return wrapper_f
 
 def do_format:
