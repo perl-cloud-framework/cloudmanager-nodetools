@@ -338,42 +338,42 @@ if guestname.find("/") != -1:
 if not DISKMAP[sizemem]:
     fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
 
+# My shift from a struct to a class-based system...
+dsklst=[
+    Disk(
+        method='iSCSI',
+        size= DISKMAP[sizemem],
+        location= '10.1.0.1',
+        mntpnt= '/',
+        mount=True,
+        ftype= fschoice.lower(),
+        wipe= 0,
+        volname= guestname,
+        wipesrc= '/dev/zero',
+        partition= partchoice,
+        dev="/dev/sda1",
+        options="defaults,noatime"
+    ),
+    Disk(
+        method='LVM',
+        size= '{0}M'.format(int(sizemem)*2),
+        location= 'XenSwap',
+        mntpnt= 'none',
+        mount=False,
+        ftype= 'swap',
+        wipe= 0,
+        volname= "{0}swap".format(guestname),
+        wipesrc= '/dev/zero',
+        partition = False,
+        dev="/dev/sdb1",
+        options="defaults"
+    )
+]
+
 instdir=os.path.join("/mnt/",guestname)
-rootmounted=False
 
 def do_format:
-    # My shift from a struct to a class-based system...
-    dsklst=[
-        Disk(
-            method='iSCSI',
-            size= DISKMAP[sizemem],
-            location= '10.1.0.1',
-            mntpnt= '/',
-            mount=True,
-            ftype= fschoice.lower(),
-            wipe= 0,
-            volname= guestname,
-            wipesrc= '/dev/zero',
-            partition= partchoice,
-            dev="/dev/sda1",
-            options="defaults,noatime"
-        ),
-        Disk(
-            method='LVM',
-            size= '{0}M'.format(int(sizemem)*2),
-            location= 'XenSwap',
-            mntpnt= 'none',
-            mount=False,
-            ftype= 'swap',
-            wipe= 0,
-            volname= "{0}swap".format(guestname),
-            wipesrc= '/dev/zero',
-            partition = False,
-            dev="/dev/sdb1",
-            options="defaults"
-        )
-    ]
-
+    rootmounted=False
     # Format and mount disks
     for disk in dsklst:
         print "Formatting filesystem.\n"
@@ -393,10 +393,6 @@ def do_format:
 
 
 def do_debootstrap:
-    # CH DIR to the guest dir
-    print >>sys.stderr, "Changing directory: {0}".format(instdir)
-    os.chdir(instdir)
-
     print "Beginning installation."
     print >>sys.stderr, "Install begin for User: {guestname}".format(guestname=guestname)
     sp=None
@@ -408,52 +404,55 @@ def do_debootstrap:
         subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',OSARCH,VERSION,instdir,MIRROR),stdout=sys.stdout)
 
 
-def do_extract(file,dest):
-    # CH DIR to the guest dir
-    print >>sys.stderr, "Changing directory: {0}".format(instdir)
-    os.chdir(instdir)
+def do_urlextract(url, dest):
+    def stopextract(signum,frame):
+        raise IOError('Took longer than 60 minutes!')
 
+    # Extract a tarball
+    cpid=os.fork()
+    if cpid == 0:
+        try:
+            os.chroot(dsklst[0].mntpnt)
+            uh=urllib2.urlopen(url)
+            tf=tarfile.open(mode='r|*',fileobj=uh)
+            tf.extractall()
+        except:
+            os._exit(1)
+        os._exit(0)
 
-    # ver2
-    #	for a in ${distributions[@]}; do
-    #		print "Checking $a for $distro"
-    #		# only break if the choice is acceptable
-    #		if [ "${a:0:${#distro}}" == "$distro" ]; then
-    #		IMGF=`print "$a" | cut -d- -f3-`
-    if not IMGF:
-        fail("Image file unknown.")
+    signal.signal(signal.SIGALRM, stopextract)
+    signal.alarm(1800) # 1hr
+    cexit=os.waitpid(child)
+    signal.alarm(0)
+    return True if cexit == 0 else False
 
-    print "Fetching Image: {0}/{1}".format(MIRROR,IMGF)
-    TYPE=None
-    if IMGF.endswith("bz2"):
-        TYPE='j'
-    elif IMGF.endswith("gz"):
-        TYPE='z'
-    if not TYPE:
-        fail ("Unknown image type")
+def do_rawriteurl(url, dest):
+    def stopextract(signum,frame):
+        raise IOError('Took longer than 60 minutes!')
 
-    sp0=subprocess.Popen(("wget","-O","-","{0}/{1}".format(MIRROR,IMGF)),stdout=subprocess.PIPE)
-    sp1=subprocess.Popen(("tar","{0}x".format(TYPE)),stdin=sp0.stdout,stdout=sys.stdout)
-    sp0.wait()
-    sp1.wait()
+    # Read & write a raw image
+    cpid=os.fork()
+    if cpid == 0:
+        try:
+            os.chroot(dsklst[0].mntpnt)
+            uh=urllib2.urlopen(url)
+            tf=tarfile.open(mode='r|*',fileobj=uh)
+            ddof=open(dsklst[0].devpath(),'w+b')
+            ddif=tf.extractfile(tf.next)
+            while (buf=ddif.read(4096)) {
+                ddof.write(buf)
+            }
+        except:
+            os._exit(1)
+        os._exit(0)
 
-    # ver1
-    print "Attempting to fetch: {0}".format(MIRROR)
+    signal.signal(signal.SIGALRM, stopextract)
+    signal.alarm(1800) # 1hr
+    cexit=os.waitpid(child)
+    signal.alarm(0)
+    return True if cexit == 0 else False
 
-    TYPE=None
-    if MIRROR.endswith("bz2"):
-        TYPE='j'
-    elif MIRROR.endswith("gz"):
-        TYPE='z'
-    if not TYPE:
-        fail ("Unknown image type")
-        #sys.exit(1)
-
-    sp0=subprocess.Popen(("wget","-O","-","{0}".format(MIRROR)),stdout=subprocess.PIPE)
-    sp1=subprocess.Popen(("tar","{0}xUv".format(TYPE)),stdin=sp0.stdout,stderr=sys.stdout)
-    sp0.wait()
-    sp1.wait()
-
+def do_template:
     if os.path.islink(os.path.join(instdir,"etc/hostname")):
         fail("hostname file is a symlink in guest image.");
     if os.path.islink(os.path.join(instdir,"etc/fstab")):
@@ -465,7 +464,7 @@ def do_extract(file,dest):
     if os.path.islink(os.path.join(instdir,"dev/xvc")):
         fail("xvc device is a symlink in guest image.");
 
-def do_template:
+
     wstring(guestname, os.path.join(instdir,"etc/hostname"))
 
     # Open template...
