@@ -49,9 +49,11 @@ command=argv[2]
 cmdargs=argv[3:]
 
 cmdtable={
-    'putf': wstring
-    'appendf': astring
-    'extract': do_extract
+    'putf': wstring,
+    'appendf': astring,
+    'extract': do_extract,
+    'urlextract': do_urlextract,
+    'rawriteurl': do_rawriteurl,
     'format': do_format
     'debootstrap': do_debootstrap
 }
@@ -403,7 +405,32 @@ def do_debootstrap:
         print >>sys.stderr, "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
         subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',OSARCH,VERSION,instdir,MIRROR),stdout=sys.stdout)
 
+@Alarm
+@Chroot
+def do_extract(uri, dest):
+    def stopextract(signum,frame):
+        raise IOError('Took longer than 60 minutes!')
 
+    # Extract a tarball
+    cpid=os.fork()
+    if cpid == 0:
+        try:
+            os.chroot(dsklst[0].mntpnt)
+            uh=open(uri)
+            tf=tarfile.open(mode='r|*',fileobj=uh)
+            tf.extractall()
+        except:
+            os._exit(1)
+        os._exit(0)
+
+    signal.signal(signal.SIGALRM, stopextract)
+    signal.alarm(1800) # 1hr
+    cexit=os.waitpid(child)
+    signal.alarm(0)
+    return True if cexit == 0 else False
+
+@Alarm
+@Chroot
 def do_urlextract(url, dest):
     def stopextract(signum,frame):
         raise IOError('Took longer than 60 minutes!')
@@ -426,6 +453,7 @@ def do_urlextract(url, dest):
     signal.alarm(0)
     return True if cexit == 0 else False
 
+@Alarm
 def do_rawriteurl(url, dest):
     def stopextract(signum,frame):
         raise IOError('Took longer than 60 minutes!')
@@ -434,14 +462,17 @@ def do_rawriteurl(url, dest):
     cpid=os.fork()
     if cpid == 0:
         try:
+            ddof=open(dsklst[0].devpath(),'w+b')
+
             os.chroot(dsklst[0].mntpnt)
             uh=urllib2.urlopen(url)
             tf=tarfile.open(mode='r|*',fileobj=uh)
-            ddof=open(dsklst[0].devpath(),'w+b')
             ddif=tf.extractfile(tf.next)
             while (buf=ddif.read(4096)) {
                 ddof.write(buf)
+                ddof.flush()
             }
+            ddof.clone()
         except:
             os._exit(1)
         os._exit(0)
