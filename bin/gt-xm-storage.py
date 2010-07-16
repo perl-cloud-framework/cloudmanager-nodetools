@@ -462,6 +462,7 @@ def do_extract(uri, dest):
     mntpnt=dsklst['/'].mount()
     os.chdir(mntpnt)
     os.chroot(mntpnt)
+
     uh=open(uri)
     tf=tarfile.open(mode='r|*',fileobj=uh)
     tf.extractall()
@@ -471,6 +472,7 @@ def do_urlextract(url, dest):
     mntpnt=dsklst['/'].mount()
     os.chdir(mntpnt)
     os.chroot(mntpnt)
+
     uh=urllib2.urlopen(url)
     tf=tarfile.open(mode='r|*',fileobj=uh)
     tf.extractall()
