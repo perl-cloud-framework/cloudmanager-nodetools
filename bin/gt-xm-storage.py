@@ -55,7 +55,8 @@ cmdtable={
     'urlextract': do_urlextract,
     'rawriteurl': do_rawriteurl,
     'format': do_format,
-    'debootstrap': do_debootstrap
+    'debootstrap': do_debootstrap,
+    'peekfs': do_peekfs
 }
 
 
@@ -501,7 +502,7 @@ def do_rawriteurl(url, dest):
     ddof.clone()
 
 @Fork(timeout=1800)
-def do_faccess(cmd,path,*args):
+def do_peekfs(cmd,path,*args):
 
     mntpnt=dsklst['/'].mount()
     os.chdir(mntpnt)
