@@ -500,6 +500,41 @@ def do_rawriteurl(url, dest):
     }
     ddof.clone()
 
+@Fork(timeout=1800)
+def do_faccess(cmd,path,*args):
+
+    mntpnt=dsklst['/'].mount()
+    os.chdir(mntpnt)
+    os.chroot(mntpnt)
+
+    pp=FilePath('/')
+    fp=pp.child(path)
+    """
+    Mapping the t.p.f.FilePath methods
+    which we will allow, to human-names
+    we can accessed via cmd arg
+    """
+    return {
+        'chmod': fp.chmod,
+        'getsize': fp.getsize,
+        'exists': fp.exists,
+        'isdir': fp.isdir,
+        'isfile': fp.isfile,
+        'islink': fp.islink,
+        'isabs': fp.isabs,
+        'listdir': fp.listdir,
+        'splitext': fp.splitext,
+        'touch': fp.touch,
+        'rm': fp.remove,
+        'makedirs': fp.makedirs,
+        'basename': fp.bsaename,
+        'dirname': fp.dirname,
+        'parent': fp.parent,
+        'mkdir': fp.createDirectory,
+        'cp': fp.copyTo,
+        'mv': fp.moveTo
+    }[cmd](*args)
+
 def do_template:
     if os.path.islink(os.path.join(instdir,"etc/hostname")):
         fail("hostname file is a symlink in guest image.");
