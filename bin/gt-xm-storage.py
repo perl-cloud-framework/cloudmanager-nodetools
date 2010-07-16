@@ -431,6 +431,9 @@ class Fork(object):
 
     def __call__(self,f):
         def wrapper_f(*args):
+            def timeout(signum,frame):
+                raise IOError('Took longer than {0} seconds!'.format(self.timeout))
+
             f(*args)
             # Extract a tarball
             cpid=os.fork()
@@ -442,7 +445,7 @@ class Fork(object):
                 os._exit(0)
 
             if self.timeout:
-                signal.signal(signal.SIGALRM, stopextract)
+                signal.signal(signal.SIGALRM, timeout)
                 signal.alarm(self.timeout)
 
             cexit=os.waitpid(child)
@@ -455,86 +458,39 @@ class Fork(object):
 
 @Fork(timeout=1800)
 def do_extract(uri, dest):
-    def stopextract(signum,frame):
-        raise IOError('Took longer than 60 minutes!')
-
     # Extract a tarball
-    cpid=os.fork()
-    if cpid == 0:
-        try:
-            mntpnt=dsklst['/'].mount()
-            os.chdir(mntpnt)
-            os.chroot(mntpnt)
-            uh=open(uri)
-            tf=tarfile.open(mode='r|*',fileobj=uh)
-            tf.extractall()
-        except:
-            os._exit(1)
-        os._exit(0)
+    mntpnt=dsklst['/'].mount()
+    os.chdir(mntpnt)
+    os.chroot(mntpnt)
+    uh=open(uri)
+    tf=tarfile.open(mode='r|*',fileobj=uh)
+    tf.extractall()
 
-    signal.signal(signal.SIGALRM, stopextract)
-    signal.alarm(1800) # 1hr
-    cexit=os.waitpid(child)
-    signal.alarm(0)
-    return True if cexit == 0 else False
-
-@Fork
+@Fork(timeout=1800)
 def do_urlextract(url, dest):
-    def stopextract(signum,frame):
-        raise IOError('Took longer than 60 minutes!')
+    mntpnt=dsklst['/'].mount()
+    os.chdir(mntpnt)
+    os.chroot(mntpnt)
+    uh=urllib2.urlopen(url)
+    tf=tarfile.open(mode='r|*',fileobj=uh)
+    tf.extractall()
 
-    # Extract a tarball
-    cpid=os.fork()
-    if cpid == 0:
-        try:
-            mntpnt=dsklst['/'].mount()
-            os.chdir(mntpnt)
-            os.chroot(mntpnt)
-            uh=urllib2.urlopen(url)
-            tf=tarfile.open(mode='r|*',fileobj=uh)
-            tf.extractall()
-        except:
-            os._exit(1)
-        os._exit(0)
-
-    signal.signal(signal.SIGALRM, stopextract)
-    signal.alarm(1800) # 1hr
-    cexit=os.waitpid(child)
-    signal.alarm(0)
-    return True if cexit == 0 else False
-
-@Fork
+@Fork(timeout=1800)
 def do_rawriteurl(url, dest):
-    def stopextract(signum,frame):
-        raise IOError('Took longer than 60 minutes!')
+    ddof=open(dsklst['/'].devpath(),'w+b')
 
-    # Read & write a raw image
-    cpid=os.fork()
-    if cpid == 0:
-        try:
-            ddof=open(dsklst['/'].devpath(),'w+b')
+    mntpnt=dsklst['/'].mount()
+    os.chdir(mntpnt)
+    os.chroot(mntpnt)
 
-            mntpnt=dsklst['/'].mount()
-            os.chdir(mntpnt)
-            os.chroot(mntpnt)
-
-            uh=urllib2.urlopen(url)
-            tf=tarfile.open(mode='r|*',fileobj=uh)
-            ddif=tf.extractfile(tf.next)
-            while (buf=ddif.read(4096)) {
-                ddof.write(buf)
-                ddof.flush()
-            }
-            ddof.clone()
-        except:
-            os._exit(1)
-        os._exit(0)
-
-    signal.signal(signal.SIGALRM, stopextract)
-    signal.alarm(1800) # 1hr
-    cexit=os.waitpid(child)
-    signal.alarm(0)
-    return True if cexit == 0 else False
+    uh=urllib2.urlopen(url)
+    tf=tarfile.open(mode='r|*',fileobj=uh)
+    ddif=tf.extractfile(tf.next)
+    while (buf=ddif.read(4096)) {
+        ddof.write(buf)
+        ddof.flush()
+    }
+    ddof.clone()
 
 def do_template:
     if os.path.islink(os.path.join(instdir,"etc/hostname")):
