@@ -44,9 +44,9 @@ class LogDevice():
 #signal.signal(15,None)
 
 # Arguments
-user=argv[1]
-command=argv[2]
-cmdargs=argv[3:]
+user=sys.argv[1]
+command=sys.argv[2]
+cmdargs=sys.argv[3:]
 
 cmdtable={
     'putf': wstring,
@@ -72,7 +72,7 @@ if not DISKMAP[sizemem]:
 instdir=os.path.join("/mnt/",guestname)
 
 # Call given command
-cmdtable[cmd](*cmdargs)
+cmdtable[command](*cmdargs)
 sys.exit 0
 
 # REMOVE THESE GLOBALS!
