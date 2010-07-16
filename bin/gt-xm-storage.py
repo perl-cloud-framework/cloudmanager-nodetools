@@ -51,10 +51,10 @@ cmdargs=sys.argv[3:]
 cmdtable={
     #'putf': wstring,
     #'appendf': astring,
-    'extract': do_extract,
-    'urlextract': do_urlextract,
+    #'extract': do_extract,
+    #'urlextract': do_urlextract,
     'rawriteurl': do_rawriteurl,
-    'format': do_format,
+    'mkfs': do_format,
     'debootstrap': do_debootstrap,
     'peekfs': do_peekfs
 }
@@ -584,8 +584,11 @@ def do_peekfs(cmd,path,*args):
         'mkdir': fp.createDirectory,
         'cp': fp.copyTo,
         'mv': fp.moveTo,
-        'append_string': _astring(fp)
-        'apply_template': _template(fp)
+        'append': _astring(fp),
+        'apply_template': _template(fp),
+        'wget': _wget(fp),
+        'urlextract': _urlextract(fp),
+        'extract': _extract(fp)
     }[cmd](*args)
 
 def do_template:
