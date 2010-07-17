@@ -544,71 +544,81 @@ def do_umount():
 
     print "Installation complete."
 
-# Arguments
-guestname=sys.argv[1]
-user=guestname
-command=sys.argv[2]
-cmdargs=sys.argv[3:]
+def main(argv=None):
+    argv = argv or sys.argv
+
+    # Arguments
+    #guestname=sys.argv[1]
+    #user=guestname
+    #command=sys.argv[2]
+    #cmdargs=sys.argv[3:]
+
+    # Receive input via stdin & json
+    jsonargs=json.load(sys.stdin)
+    client=jsonargs['client']
+    cmd=jsonargs['cmd']
+    cmdargs=jsonargs['cmdargs']
 
 
-# My shift from a struct to a class-based system...
-dsklst={
-    '/': Disk(
-        method='iSCSI',
-        size=None, #DISKMAP[sizemem],
-        location= '10.1.0.1',
-        mntpnt= '/',
-        mount=True,
-        #ftype= fschoice.lower(),
-        wipe= 0,
-        volname= guestname,
-        wipesrc= '/dev/zero',
-        #partition= partchoice,
-        dev="/dev/sda1",
-        options="defaults,noatime"
-    ),
-    'swap': Disk(
-        method='LVM',
-        size= '{0}M'.format(int(sizemem)*2),
-        location= 'XenSwap',
-        mntpnt= 'none',
-        mount=False,
-        ftype= 'swap',
-        wipe= 0,
-        volname= "{0}swap".format(guestname),
-        wipesrc= '/dev/zero',
-        partition = False,
-        dev="/dev/sdb1",
-        options="defaults"
-    )
-}
+    # My shift from a struct to a class-based system...
+    dsklst={
+        '/': Disk(
+            method='iSCSI',
+            size=None, #DISKMAP[sizemem],
+            location= '10.1.0.1',
+            mntpnt= '/',
+            mount=True,
+            #ftype= fschoice.lower(),
+            wipe= 0,
+            volname= guestname,
+            wipesrc= '/dev/zero',
+            #partition= partchoice,
+            dev="/dev/sda1",
+            options="defaults,noatime"
+        ),
+        'swap': Disk(
+            method='LVM',
+            size= '{0}M'.format(int(client['memory'])*2),
+            location= 'XenSwap',
+            mntpnt= 'none',
+            mount=False,
+            ftype= 'swap',
+            wipe= 0,
+            volname= "{0}swap".format(guestname),
+            wipesrc= '/dev/zero',
+            partition = False,
+            dev="/dev/sdb1",
+            options="defaults"
+        )
+    }
 
 
-cmdtable={
-    #'putf': wstring,
-    #'appendf': astring,
-    #'extract': do_extract,
-    #'urlextract': do_urlextract,
-    'rawrite': do_rawriteurl,
-    'mkfs': do_format,
-    'debootstrap': do_debootstrap,
-    'peekfs': do_peekfs
-}
+    cmdtable={
+        #'putf': wstring,
+        #'appendf': astring,
+        #'extract': do_extract,
+        #'urlextract': do_urlextract,
+        'rawrite': do_rawriteurl,
+        'mkfs': do_format,
+        'debootstrap': do_debootstrap,
+        'peekfs': do_peekfs
+    }
 
 
-# Sanity checks...
-if guestname.find("..") != -1:
-    fail ("Guest '{0}' specified is invalid".format(guestname))
-if guestname.find("/") != -1:
-    fail ("Guest '{0}' specified is invalid".format(guestname))
+    # Sanity checks...
+    if guestname.find("..") != -1:
+        fail ("Guest '{0}' specified is invalid".format(guestname))
+    if guestname.find("/") != -1:
+        fail ("Guest '{0}' specified is invalid".format(guestname))
 
-if not DISKMAP[sizemem]:
-    fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
+    if not DISKMAP[sizemem]:
+        fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
 
-instdir=os.path.join("/mnt/",guestname)
+    instdir=os.path.join("/mnt/",guestname)
 
-# Call given command
-cmdtable[command](*cmdargs)
-sys.exit(0)
+    # Call given command
+    cmdtable[command](*cmdargs)
+    sys.exit(0)
 
-
+if __name__ == "__main__":
+    sys.exit(main())
