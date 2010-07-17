@@ -542,8 +542,6 @@ def do_umount():
 
     subprocess.call(("umount",instdir))
 
-    print "Installation complete."
-
 def main(argv=None):
     argv = argv or sys.argv
 
