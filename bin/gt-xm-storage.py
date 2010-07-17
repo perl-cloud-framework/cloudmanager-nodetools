@@ -162,7 +162,7 @@ class Disk:
                     # Lets get rid of the symlinks and
                     # pretty up the display of the path we churn out
                     dpath=os.path.abspath(os.path.join(os.path.dirname(dpath), os.readlink(dpath)))
-                    print >>sys.stderr, "Checking path: {0}".format(dpath)
+                    #print >>sys.stderr, "Checking path: {0}".format(dpath)
 
                 if not self.check_exists(dpath):
                     print >>sys.stderr, "Scanning iSCSI"
@@ -195,12 +195,12 @@ class Disk:
         try:
             si=os.stat(path)
         except OSError:
-            print >>sys.stderr, "Stat failed for path: {0}".format(path)
+            #print >>sys.stderr, "Stat failed for path: {0}".format(path)
             return False
 
         # si[0] should contain st_mode, required by S_ISBLK
         if not stat.S_ISBLK(si[0]):
-            print >>sys.stderr, "Is not a block device: {0}".format(si[0])
+            #print >>sys.stderr, "Is not a block device: {0}".format(si[0])
             return False
             fail ('Block device does not exist')
         return True
@@ -214,11 +214,10 @@ class Disk:
                     disk.size,
                     disk.volname,
                     disk.location )
-                #print >>sys.stderr, "Calling '{3}'\n".format(ex)
                 sp=subprocess.Popen(ex, stdout=subprocess.PIPE, stderr=subprocess.PIPE )
                 soo=sp.communicate()
                 sp.wait()
-                print >>sys.stderr, "Created disk. \nSTDOUT:\n({0})\nSTDERR:\n{1}\n".format(soo[0],soo[1])
+                #print >>sys.stderr, "Created disk. \nSTDOUT:\n({0})\nSTDERR:\n{1}\n".format(soo[0],soo[1])
             except:
                 #CalledProcessError:
                 fail ("Could not create disk.")
@@ -262,7 +261,8 @@ class Disk:
         if not disk.partition:
             disk.partition='N'
         if disk.partition.upper() is not 'Y':
-            print >>sys.stderr, "Will not partition disk."
+            #print >>sys.stderr, "Will not partition disk."
+            pass
         else:
             # make partition
             ordie(("parted","-s",devpath,"mklabel","msdos"),"Mklabel failed")
@@ -307,7 +307,7 @@ class Disk:
         # mount
         ex=("mount",devpath,mntpnt)
         #"{0}/{1}".format(parent,self.volname))
-        print >>sys.stderr, "Mount, cmd: {0}".format(" ".join(ex))
+        #print >>sys.stderr, "Mount, cmd: {0}".format(" ".join(ex))
         sp=subprocess.Popen(("mount",devpath,mntpnt),stdout=sys.stdout,stderr=sys.stderr)
         if sp.wait() != 0:
             fail ("Mount fail.")
@@ -386,7 +386,7 @@ def do_format(fschoice):
         print "Formatting filesystem.\n"
         disk.format()
 
-        print "format complete."
+        #print "format complete."
 
         if disk.domount:
             print >>sys.stderr, "Mounting filesystem at instdir ({0})".format(instdir)
@@ -396,7 +396,7 @@ def do_format(fschoice):
             rootmounted=True
 
     if not rootmounted:
-        fail ("New root filesystem not found.")
+        fail ("Instance root filesystem not found.")
 
 
 @Fork(timeout=3600)
@@ -534,7 +534,6 @@ def do_peekfs(cmd,path,*args):
     }[cmd](*args)
 
 def do_umount():
-    print "Unmounting filesystem"
     os.chdir("/tmp")
     subprocess.call(("fuser","-k","-9","-c",instdir))
     subprocess.check_call(("sync"))
