@@ -476,7 +476,7 @@ def do_debootstrap:
 
 
 @Fork(timeout=1800)
-def do_extract(uri, dest):
+def do_extract(dest, url):
     # Extract a tarball
     mntpnt=dsklst['/'].mount()
     os.chdir(mntpnt)
@@ -487,7 +487,7 @@ def do_extract(uri, dest):
     tf.extractall()
 
 @Fork(timeout=1800)
-def do_urlextract(url, dest):
+def do_urlextract(dest, url):
     mntpnt=dsklst['/'].mount()
     os.chdir(mntpnt)
     os.chroot(mntpnt)
@@ -497,7 +497,7 @@ def do_urlextract(url, dest):
     tf.extractall()
 
 @Fork(timeout=1800)
-def do_rawriteurl(url, dest):
+def do_rawriteurl(dest, url):
     ddof=open(dsklst['/'].devpath(),'w+b')
 
     mntpnt=dsklst['/'].mount()
@@ -553,6 +553,11 @@ def do_peekfs(cmd,path,*args):
             sfp.moveTo(path.realpath())
         return lambda *args: _wrap(fp,*args)
 
+    def _urlextract(fp):
+        return lambda *args: do_urlextract(fp,*args)
+
+    def _extract(fp):
+        return lambda *args: do_extract(fp,*args)
 
     mntpnt=dsklst['/'].mount()
     os.chdir(mntpnt)
