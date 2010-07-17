@@ -43,38 +43,6 @@ class LogDevice():
 #signal.signal(2,None)
 #signal.signal(15,None)
 
-# Arguments
-user=sys.argv[1]
-command=sys.argv[2]
-cmdargs=sys.argv[3:]
-
-cmdtable={
-    #'putf': wstring,
-    #'appendf': astring,
-    #'extract': do_extract,
-    #'urlextract': do_urlextract,
-    'rawrite': do_rawriteurl,
-    'mkfs': do_format,
-    'debootstrap': do_debootstrap,
-    'peekfs': do_peekfs
-}
-
-
-# Sanity checks...
-if guestname.find("..") != -1:
-    fail ("Guest '{0}' specified is invalid".format(guestname))
-if guestname.find("/") != -1:
-    fail ("Guest '{0}' specified is invalid".format(guestname))
-
-if not DISKMAP[sizemem]:
-    fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
-
-instdir=os.path.join("/mnt/",guestname)
-
-# Call given command
-cmdtable[command](*cmdargs)
-sys.exit 0
-
 # REMOVE THESE GLOBALS!
 
 # Each takes one argument via format, {0} containing the 
@@ -86,39 +54,6 @@ MKFS={
     'swap': ('mkswap','{device}'),
     'keep': ('true','{device}')
 }
-
-# My shift from a struct to a class-based system...
-dsklst={
-    '/': Disk(
-        method='iSCSI',
-        size= DISKMAP[sizemem],
-        location= '10.1.0.1',
-        mntpnt= '/',
-        mount=True,
-        ftype= fschoice.lower(),
-        wipe= 0,
-        volname= guestname,
-        wipesrc= '/dev/zero',
-        partition= partchoice,
-        dev="/dev/sda1",
-        options="defaults,noatime"
-    ),
-    'swap': Disk(
-        method='LVM',
-        size= '{0}M'.format(int(sizemem)*2),
-        location= 'XenSwap',
-        mntpnt= 'none',
-        mount=False,
-        ftype= 'swap',
-        wipe= 0,
-        volname= "{0}swap".format(guestname),
-        wipesrc= '/dev/zero',
-        partition = False,
-        dev="/dev/sdb1",
-        options="defaults"
-    )
-}
-
 
 def fail(msg):
     print >>sys.stderr, msg
@@ -179,12 +114,12 @@ class Disk:
         self.size=data['size']
         self.location=data['location']
         self.mntpnt=data['mntpnt']
-        self.ftype=data['ftype']
+        self.ftype=data.has_key('ftype') and data['ftype'] or None
         self.wipe=data['wipe']
         self.volname=data['volname']
         self.wipesrc=data['wipesrc']
         self.method=data['method']
-        self.partition=data['partition']
+        self.partition=data.has_key('partition') and data['partition'] or None
         self.domount=data['mount']
         self.guestdev=data['dev']
         self.mountoptions=data['options']
@@ -401,7 +336,7 @@ class Time(object):
 # A good plan when doing a chroot or such...
 class Fork(object):
     def __init__ (self, timeout=None):
-        self.timeout = timeout if timeout
+        self.timeout = timeout
 
     def __call__(self,f):
         def wrapper_f(*args):
@@ -442,10 +377,12 @@ class Fork(object):
 
         return wrapper_f
 
-def do_format:
+def do_format(fschoice):
     rootmounted=False
     # Format and mount disks
     for mntpnt,disk in dsklst.items():
+        if not disk.ftype:
+            disk.ftype = fschoice
         print "Formatting filesystem.\n"
         disk.format()
 
@@ -463,7 +400,7 @@ def do_format:
 
 
 @Fork(timeout=3600)
-def do_debootstrap:
+def do_debootstrap():
     print "Beginning installation."
     print >>sys.stderr, "Install begin for User: {guestname}".format(guestname=guestname)
     sp=None
@@ -507,10 +444,9 @@ def do_rawriteurl(dest, url):
     uh=urllib2.urlopen(url)
     tf=tarfile.open(mode='r|*',fileobj=uh)
     ddif=tf.extractfile(tf.next)
-    while (buf=ddif.read(4096)) {
+    for buf in ddif.read(4096):
         ddof.write(buf)
         ddof.flush()
-    }
     ddof.clone()
 
 @Fork(timeout=1800)
@@ -537,7 +473,7 @@ def do_peekfs(cmd,path,*args):
     # Templating engine
     def _template(fp):
         def _wrap(path,**template):
-            scratchfile=path.dirname()+"."+path.basename()".tmp"
+            scratchfile=path.dirname()+"."+path.basename()+".tmp"
             fh=path.open('r')
 
             sfp=FilePath(scratchfile)
@@ -597,7 +533,7 @@ def do_peekfs(cmd,path,*args):
         'mknod': _mknod(fp)
     }[cmd](*args)
 
-def do_umount:
+def do_umount():
     print "Unmounting filesystem"
     os.chdir("/tmp")
     subprocess.call(("fuser","-k","-9","-c",instdir))
@@ -607,5 +543,72 @@ def do_umount:
     subprocess.call(("umount",instdir))
 
     print "Installation complete."
+
+# Arguments
+guestname=sys.argv[1]
+user=guestname
+command=sys.argv[2]
+cmdargs=sys.argv[3:]
+
+
+# My shift from a struct to a class-based system...
+dsklst={
+    '/': Disk(
+        method='iSCSI',
+        size=None, #DISKMAP[sizemem],
+        location= '10.1.0.1',
+        mntpnt= '/',
+        mount=True,
+        #ftype= fschoice.lower(),
+        wipe= 0,
+        volname= guestname,
+        wipesrc= '/dev/zero',
+        #partition= partchoice,
+        dev="/dev/sda1",
+        options="defaults,noatime"
+    ),
+    'swap': Disk(
+        method='LVM',
+        size= '{0}M'.format(int(sizemem)*2),
+        location= 'XenSwap',
+        mntpnt= 'none',
+        mount=False,
+        ftype= 'swap',
+        wipe= 0,
+        volname= "{0}swap".format(guestname),
+        wipesrc= '/dev/zero',
+        partition = False,
+        dev="/dev/sdb1",
+        options="defaults"
+    )
+}
+
+
+cmdtable={
+    #'putf': wstring,
+    #'appendf': astring,
+    #'extract': do_extract,
+    #'urlextract': do_urlextract,
+    'rawrite': do_rawriteurl,
+    'mkfs': do_format,
+    'debootstrap': do_debootstrap,
+    'peekfs': do_peekfs
+}
+
+
+# Sanity checks...
+if guestname.find("..") != -1:
+    fail ("Guest '{0}' specified is invalid".format(guestname))
+if guestname.find("/") != -1:
+    fail ("Guest '{0}' specified is invalid".format(guestname))
+
+if not DISKMAP[sizemem]:
+    fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
+
+instdir=os.path.join("/mnt/",guestname)
+
+# Call given command
+cmdtable[command](*cmdargs)
+sys.exit(0)
 
 
