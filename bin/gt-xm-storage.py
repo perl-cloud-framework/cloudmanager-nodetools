@@ -28,8 +28,12 @@ import time
 import json
 import urllib2
 
+# used for random filenames...
+import random
+import base64
+
 import logging
-LOG_FILENAME = '/tmp/logging_example.out'
+LOG_FILENAME = '/tmp/'+sys.argv[0]+'.log'
 logging.basicConfig(filename=LOG_FILENAME,level=logging.DEBUG)
 
 class LogDevice():
@@ -348,28 +352,40 @@ class Fork(object):
             #  fifo is a fifo, jack is our pid,
             #  fee is the client's fifo-fh.
             #  fum is the server's fifo-fh.
-            fifo=os.mkfifo('/tmp/'+argv[0]+'.ipc')
+
+            rnd=base64.urlsafe_b64encode(str(random.getrandbits(16)))
+            filename='/tmp/'+sys.argv[0]+'.'+rnd+'.ipc'
+            fifo=os.mkfifo(filename)
+
             jack=os.fork()
             if jack == 0:
                 try:
-                    fee=open(fifo,'w')
-                    fee.write(f(*args))
+                    fee=open(filename,'w')
+                    result=f(*args)
+                    print result+"\n"
+                    fee.write(result)
+                    fee.flush()
                     fee.close()
                 except:
+                    print "Unexpected error:", sys.exc_info(), "\n"
                     os._exit(1)
+                print "Exiting child.\n"
                 os._exit(0)
 
             if self.timeout:
                 signal.signal(signal.SIGALRM, timeout)
                 signal.alarm(self.timeout)
 
-            cexit=os.waitpid(child)
+            fum=open(filename, 'r')
+            jackret=fum.read()
+
+            cexit=os.waitpid(jack,0)
 
             if self.timeout:
                 signal.alarm(0)
 
-            fum=open(fifo,'r')
-            jackret=fum.read()
+            os.unlink(filename)
+
             if len(jackret) == 0:
                 return True if cexit == 0 else False
             else:
@@ -541,6 +557,8 @@ def do_umount():
 
     subprocess.call(("umount",instdir))
 
+dsklst={}
+
 def main(argv=None):
     argv = argv or sys.argv
 
@@ -550,24 +568,26 @@ def main(argv=None):
     #command=sys.argv[2]
     #cmdargs=sys.argv[3:]
 
+    print "Reading in...\n"
     # Receive input via stdin & json
     jsonargs=json.load(sys.stdin)
     client=jsonargs['client']
     cmd=jsonargs['cmd']
     cmdargs=jsonargs['cmdargs']
 
+    print "Read complete\n"
 
     # My shift from a struct to a class-based system...
     dsklst={
         '/': Disk(
             method='iSCSI',
-            size=None, #DISKMAP[sizemem],
+            size=client['block_storage'],
             location= '10.1.0.1',
             mntpnt= '/',
             mount=True,
             #ftype= fschoice.lower(),
             wipe= 0,
-            volname= guestname,
+            volname= client['username'],
             wipesrc= '/dev/zero',
             #partition= partchoice,
             dev="/dev/sda1",
@@ -581,7 +601,7 @@ def main(argv=None):
             mount=False,
             ftype= 'swap',
             wipe= 0,
-            volname= "{0}swap".format(guestname),
+            volname= "{0}swap".format(client['username']),
             wipesrc= '/dev/zero',
             partition = False,
             dev="/dev/sdb1",
@@ -603,19 +623,18 @@ def main(argv=None):
 
 
     # Sanity checks...
-    if guestname.find("..") != -1:
-        fail ("Guest '{0}' specified is invalid".format(guestname))
-    if guestname.find("/") != -1:
-        fail ("Guest '{0}' specified is invalid".format(guestname))
+    if client['username'].find("..") != -1:
+        fail ("Guest '{0}' specified is invalid".format(client['username']))
+    if client['username'].find("/") != -1:
+        fail ("Guest '{0}' specified is invalid".format(client['username']))
 
-    if not DISKMAP[sizemem]:
-        fail ("Memory size unknown in configuration. {0}, {1}.".format(sizemem, DISKMAP[sizemem]))
+    instdir=os.path.join("/mnt/",client['username'])
 
-    instdir=os.path.join("/mnt/",guestname)
-
+    print "Output:\n"
     # Call given command
-    cmdtable[command](*cmdargs)
+    print cmdtable[cmd](*cmdargs)
     sys.exit(0)
 
 if __name__ == "__main__":
+    print "Starting...\n";
     sys.exit(main())
