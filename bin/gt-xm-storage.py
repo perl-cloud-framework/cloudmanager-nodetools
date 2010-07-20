@@ -328,6 +328,30 @@ class Disk:
 
         return mntpnt
 
+    def umount(self,mntpnt=None):
+        if not os.path.ismount(mntpnt):
+            return False
+
+        sp=subprocess.Popen(("umount",mntpnt),stdout=sys.stdout,stderr=sys.stderr)
+        if sp.wait() != 0:
+            # if failure, we kill processes and try again.
+            # we don't want to kill processes if at all possible,
+            # so this is only done as a last-resort
+
+            # Must chdir out of the mntpnt, if necessary...
+            os.chdir("/tmp")
+            subprocess.call(("fuser","-k","-9","-c",mntpnt))
+            subprocess.check_call(("sync"))
+            subprocess.check_call(("sync"))
+            subprocess.call(("umount",instdir))
+
+            # Second time a charm
+            sp=subprocess.Popen(("umount",mntpnt),stdout=sys.stdout,stderr=sys.stderr)
+            if sp.wait() != 0:
+                print "Mount error."
+                raise
+
+        return True
 
 # Basic Time class
 class Time(object):
@@ -585,14 +609,6 @@ def do_peekfs(cmd,path,*args):
         'extract': _extract(fp),
         #'mknod': _mknod(fp)
     }[cmd](*args)
-
-def do_umount():
-    os.chdir("/tmp")
-    subprocess.call(("fuser","-k","-9","-c",instdir))
-    subprocess.check_call(("sync"))
-    subprocess.check_call(("sync"))
-
-    subprocess.call(("umount",instdir))
 
 dsklst={}
 
