@@ -407,7 +407,6 @@ class Fork(object):
                 except:
                     traceback.print_exc()
                     os._exit(1)
-                print "Exiting child.\n"
                 os._exit(0)
 
             if self.timeout:
@@ -579,7 +578,6 @@ def do_peekfs(cmd,path,*args):
     # We're safe /w preauthChild since we're chroot'ed
     fp=pp.preauthChild(path)
 
-    print "Executing command\n"
     """
     Mapping the t.p.f.FilePath methods
     which we will allow, to human-names
@@ -685,8 +683,8 @@ def main(argv=None):
 
     instdir=os.path.join("/mnt/",client['username'])
 
-    # Call given command
-    print json.dumps(cmdtable[cmd](*cmdargs))
+    # Call given command & print json out
+    json.dump(cmdtable[cmd](*cmdargs),sys.stdout)
     sys.exit(0)
 
 if __name__ == "__main__":
