@@ -189,8 +189,6 @@ class Disk:
                     time.sleep(5)
             else:
                 return None
-                #"/dev/disk-not-found"
-                #dpath="/dev/disk-not-found"
         else:
             return fail("Disk method invalid")
         if self.dpathsuffix:
@@ -376,17 +374,12 @@ class Fork(object):
             if jack == 0:
                 try:
                     fee=open(filename,'w')
-                    #fee=os.fdopen(os.open(filename,os.O_WRONLY))
                     result=f(*args)
-                    #print result+"\n"
                     pickle.dump(result,fee)
-                    #fee.write(result)
                     fee.flush()
                     fee.close()
                 except:
-                    #print "Unexpected error:", sys.exc_info(), "\n"
                     traceback.print_exc()
-                    #traceback.print_tb(sys.exc_info()[2])
                     os._exit(1)
                 print "Exiting child.\n"
                 os._exit(0)
@@ -395,7 +388,6 @@ class Fork(object):
                 signal.signal(signal.SIGALRM, timeout)
                 signal.alarm(self.timeout)
 
-            #fum=os.fdopen(os.open(filename,os.O_RDONLY))
             fum=open(filename, 'r')
             jackret=fum.read()
 
