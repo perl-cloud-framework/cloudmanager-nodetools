@@ -628,7 +628,6 @@ def main(argv=None):
     # Receive input via stdin & json
     jsonargs=json.load(sys.stdin)
 
-    print "Setting arguments from JSON:"
     client=jsonargs['client']
     cmdargs=jsonargs['cmd']
     cmd=cmdargs.pop(0)
