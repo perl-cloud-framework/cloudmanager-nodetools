@@ -688,7 +688,7 @@ def main(argv=None):
 
     print "Output:\n"
     # Call given command
-    print cmdtable[cmd](*cmdargs)
+    print json.dumps(cmdtable[cmd](*cmdargs))
     sys.exit(0)
 
 if __name__ == "__main__":
