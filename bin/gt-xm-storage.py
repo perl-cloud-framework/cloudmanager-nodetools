@@ -25,12 +25,19 @@ import stat
 import time
 
 # required for iscsi
-import json
+# Use simplejson or Python 2.6 json, prefer simplejson.
+try:
+    import simplejson as json
+except ImportError:
+    import json
 import urllib2
 
 # used for random filenames...
 import random
 import base64
+
+# FilePath abstraction
+from twisted.python.filepath import FilePath
 
 import logging
 LOG_FILENAME = '/tmp/'+sys.argv[0]+'.log'
@@ -336,6 +343,7 @@ class Time(object):
     def years(cnt):
         return months(1)*cnt
 
+import traceback
 # Define a forker!
 # A good plan when doing a chroot or such...
 class Fork(object):
@@ -367,7 +375,8 @@ class Fork(object):
                     fee.flush()
                     fee.close()
                 except:
-                    print "Unexpected error:", sys.exc_info(), "\n"
+                    #print "Unexpected error:", sys.exc_info(), "\n"
+                    traceback.print_tb(sys.exc_info()[2])
                     os._exit(1)
                 print "Exiting child.\n"
                 os._exit(0)
@@ -394,6 +403,7 @@ class Fork(object):
         return wrapper_f
 
 def do_format(fschoice):
+    global dsklst
     rootmounted=False
     # Format and mount disks
     for mntpnt,disk in dsklst.items():
@@ -451,6 +461,7 @@ def do_urlextract(dest, url):
 
 @Fork(timeout=1800)
 def do_rawriteurl(dest, url):
+    global dsklst
     ddof=open(dsklst['/'].devpath(),'w+b')
 
     mntpnt=dsklst['/'].mount()
@@ -467,12 +478,21 @@ def do_rawriteurl(dest, url):
 
 @Fork(timeout=1800)
 def do_peekfs(cmd,path,*args):
+    global dsklst
     # wstring simply writes a string to new file
     #    def _wstring(filename,string):
     #        # Right teh filez LOL -KTHXBYE, LOLCATZ
     #        tehfile=path.open('w')
     #        tehfile.write(string)
     #        tehfile.close()
+
+    def _wget(fp):
+        def _wrap(path,url):
+            req=urllib2.urlopen(url).read()
+            tehfile=path.open('w')
+            tehfile.write(req)
+            tehfile.close()
+        return lambda *args: _wrap(fp,*args)
 
     # wstring writes a string to file
     def _astring(fp):
@@ -511,8 +531,13 @@ def do_peekfs(cmd,path,*args):
     def _extract(fp):
         return lambda *args: do_extract(fp,*args)
 
+    print "Mounting root\n"
     mntpnt=dsklst['/'].mount()
+
+    print "chdir root\n"
     os.chdir(mntpnt)
+
+    print "chroot\n"
     os.chroot(mntpnt)
 
     pp=FilePath('/')
@@ -546,7 +571,7 @@ def do_peekfs(cmd,path,*args):
         'wget': _wget(fp),
         'urlextract': _urlextract(fp),
         'extract': _extract(fp),
-        'mknod': _mknod(fp)
+        #'mknod': _mknod(fp)
     }[cmd](*args)
 
 def do_umount():
@@ -561,6 +586,7 @@ dsklst={}
 
 def main(argv=None):
     argv = argv or sys.argv
+    global dsklst
 
     # Arguments
     #guestname=sys.argv[1]
