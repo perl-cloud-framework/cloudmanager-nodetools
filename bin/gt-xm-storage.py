@@ -309,6 +309,11 @@ class Disk:
         if parent is None:
             parent=os.path.join("/mnt/",self.volname.strip('/'))
         mntpnt=os.path.join(parent,mntpnt.strip('/'))
+
+        if os.path.ismount(mntpnt):
+            # Already mounted
+            return mntpnt
+
         # mkdir
         try:
             os.mkdir(mntpnt,750)
@@ -344,6 +349,8 @@ class Time(object):
         return months(1)*cnt
 
 import traceback
+import pickle
+
 # Define a forker!
 # A good plan when doing a chroot or such...
 class Fork(object):
@@ -351,7 +358,7 @@ class Fork(object):
         self.timeout = timeout
 
     def __call__(self,f):
-        def wrapper_f(*args):
+        def fork_wrapper(*args):
             def timeout(signum,frame):
                 raise IOError('Took longer than {0} seconds!'.format(self.timeout))
 
@@ -369,14 +376,17 @@ class Fork(object):
             if jack == 0:
                 try:
                     fee=open(filename,'w')
+                    #fee=os.fdopen(os.open(filename,os.O_WRONLY))
                     result=f(*args)
-                    print result+"\n"
-                    fee.write(result)
+                    #print result+"\n"
+                    pickle.dump(result,fee)
+                    #fee.write(result)
                     fee.flush()
                     fee.close()
                 except:
                     #print "Unexpected error:", sys.exc_info(), "\n"
-                    traceback.print_tb(sys.exc_info()[2])
+                    traceback.print_exc()
+                    #traceback.print_tb(sys.exc_info()[2])
                     os._exit(1)
                 print "Exiting child.\n"
                 os._exit(0)
@@ -385,6 +395,7 @@ class Fork(object):
                 signal.signal(signal.SIGALRM, timeout)
                 signal.alarm(self.timeout)
 
+            #fum=os.fdopen(os.open(filename,os.O_RDONLY))
             fum=open(filename, 'r')
             jackret=fum.read()
 
@@ -398,9 +409,9 @@ class Fork(object):
             if len(jackret) == 0:
                 return True if cexit == 0 else False
             else:
-                return jackret
+                return pickle.loads(jackret)
 
-        return wrapper_f
+        return fork_wrapper
 
 def do_format(fschoice):
     global dsklst
@@ -531,6 +542,12 @@ def do_peekfs(cmd,path,*args):
     def _extract(fp):
         return lambda *args: do_extract(fp,*args)
 
+    def _moveTo(fp):
+        return lambda path: fp.moveTo(FilePath(path))
+
+    def _copyTo(fp):
+        return lambda path: fp.copyTo(FilePath(path))
+
     print "Mounting root\n"
     mntpnt=dsklst['/'].mount()
 
@@ -540,8 +557,11 @@ def do_peekfs(cmd,path,*args):
     print "chroot\n"
     os.chroot(mntpnt)
 
+    print "Setting filepath\n"
     pp=FilePath('/')
     fp=pp.child(path)
+
+    print "Executing command\n"
     """
     Mapping the t.p.f.FilePath methods
     which we will allow, to human-names
@@ -564,8 +584,8 @@ def do_peekfs(cmd,path,*args):
         'dirname': fp.dirname,
         'parent': fp.parent,
         'mkdir': fp.createDirectory,
-        'cp': fp.copyTo,
-        'mv': fp.moveTo,
+        'cp': _copyTo(fp),
+        'mv': _moveTo(fp),
         'append': _astring(fp),
         'apply_template': _template(fp),
         'wget': _wget(fp),
