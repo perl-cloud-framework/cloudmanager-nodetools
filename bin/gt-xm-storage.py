@@ -397,9 +397,11 @@ class Fork(object):
             jack=os.fork()
             if jack == 0:
                 try:
-                    fee=open(filename,'w')
+                    fee=open(filename,'wb')
                     result=f(*args)
-                    pickle.dump(result,fee)
+                    # pickle arg[2] is negative, for highest version
+                    # otherwise get version 0 & unicode error
+                    pickle.dump(result,fee,-1)
                     fee.flush()
                     fee.close()
                 except:
@@ -412,7 +414,7 @@ class Fork(object):
                 signal.signal(signal.SIGALRM, timeout)
                 signal.alarm(self.timeout)
 
-            fum=open(filename, 'r')
+            fum=open(filename, 'rb')
             jackret=fum.read()
 
             cexit=os.waitpid(jack,0)
@@ -564,18 +566,18 @@ def do_peekfs(cmd,path,*args):
     def _copyTo(fp):
         return lambda path: fp.copyTo(FilePath(path))
 
-    print "Mounting root\n"
+    def _ls(fp):
+        def _wrap(fp,glob="*"):
+            map (lambda f: f.basename(), fp.globChildren(glob))
+        return lambda *args: _wrap(fp,*args)
+
     mntpnt=dsklst['/'].mount()
-
-    print "chdir root\n"
     os.chdir(mntpnt)
-
-    print "chroot\n"
     os.chroot(mntpnt)
 
-    print "Setting filepath\n"
     pp=FilePath('/')
-    fp=pp.child(path)
+    # We're safe /w preauthChild since we're chroot'ed
+    fp=pp.preauthChild(path)
 
     print "Executing command\n"
     """
@@ -607,6 +609,7 @@ def do_peekfs(cmd,path,*args):
         'wget': _wget(fp),
         'urlextract': _urlextract(fp),
         'extract': _extract(fp),
+        'ls': _ls(fp),
         #'mknod': _mknod(fp)
     }[cmd](*args)
 
@@ -622,7 +625,6 @@ def main(argv=None):
     #command=sys.argv[2]
     #cmdargs=sys.argv[3:]
 
-    print "Reading in...\n"
     # Receive input via stdin & json
     jsonargs=json.load(sys.stdin)
 
@@ -630,8 +632,6 @@ def main(argv=None):
     client=jsonargs['client']
     cmdargs=jsonargs['cmd']
     cmd=cmdargs.pop(0)
-
-    print "Read complete\n"
 
     # My shift from a struct to a class-based system...
     dsklst={
@@ -686,11 +686,9 @@ def main(argv=None):
 
     instdir=os.path.join("/mnt/",client['username'])
 
-    print "Output:\n"
     # Call given command
     print json.dumps(cmdtable[cmd](*cmdargs))
     sys.exit(0)
 
 if __name__ == "__main__":
-    print "Starting...\n";
     sys.exit(main())
