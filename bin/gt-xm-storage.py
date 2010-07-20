@@ -40,7 +40,7 @@ import base64
 from twisted.python.filepath import FilePath
 
 import logging
-LOG_FILENAME = '/tmp/'+sys.argv[0]+'.log'
+LOG_FILENAME = '/tmp/'+os.path.basename(sys.argv[0])+'.log'
 logging.basicConfig(filename=LOG_FILENAME,level=logging.DEBUG)
 
 class LogDevice():
@@ -609,9 +609,11 @@ def main(argv=None):
     print "Reading in...\n"
     # Receive input via stdin & json
     jsonargs=json.load(sys.stdin)
+
+    print "Setting arguments from JSON:"
     client=jsonargs['client']
-    cmd=jsonargs['cmd']
-    cmdargs=jsonargs['cmdargs']
+    cmdargs=jsonargs['cmd']
+    cmd=cmdargs.pop(0)
 
     print "Read complete\n"
 
