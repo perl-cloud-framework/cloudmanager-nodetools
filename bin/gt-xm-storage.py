@@ -391,7 +391,7 @@ class Fork(object):
             #  fum is the server's fifo-fh.
 
             rnd=base64.urlsafe_b64encode(str(random.getrandbits(16)))
-            filename='/tmp/'+sys.argv[0]+'.'+rnd+'.ipc'
+            filename='/tmp/'+os.path.basename(sys.argv[0])+'.'+rnd+'.ipc'
             fifo=os.mkfifo(filename)
 
             jack=os.fork()
