@@ -483,11 +483,21 @@ class Fork(object):
 
         return fork_wrapper
 
-def do_format(fschoice):
+def do_format(fs=None,fschoice=None):
     global dsklst
     rootmounted=False
     # Format and mount disks
-    for mntpnt,disk in dsklst.items():
+    if fs:
+        disks={ fs : dsklst[fs] }
+    else:
+        disks=dsklst
+       
+    # Check that NONE are mounted first
+    for mntpnt,disk in disks.items():
+        if disk.is_mounted():
+            return False
+    
+    for mntpnt,disk in disks.items():
         if not disk.ftype:
             disk.ftype = fschoice
         print "Formatting filesystem.\n"
