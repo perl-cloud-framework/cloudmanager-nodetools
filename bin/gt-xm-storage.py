@@ -33,6 +33,8 @@ except ImportError:
 import urllib2
 import ftplib
 import mimetypes
+import bz2
+import tarfile
 
 # used for random filenames...
 import random
@@ -136,6 +138,7 @@ class Disk:
         self.domount=data['mount']
         self.guestdev=data['dev']
         self.mountoptions=data['options']
+        self.guest_name=data['guest_name']
         self.dpathsuffix=None
         self._devpath=None
         pass
@@ -295,6 +298,15 @@ class Disk:
         # Block return until format complete 
         sp.wait()
 
+    def real_mountpoint(self,mntpnt=None,parent=None):
+        if mntpnt is None:
+            mntpnt=self.mntpnt
+        if parent is None:
+            parent=os.path.join("/mnt/",self.volname.strip('/'))
+        mntpnt=os.path.join(parent,mntpnt.strip('/'))
+
+        return mntpnt
+
     # Optionally accept parent argument to mount under a sub-dir.
     def mount(self,mntpnt=None,parent=None):
         if not self.domount:
@@ -304,15 +316,15 @@ class Disk:
         if not self.check_exists(devpath):
             fail ("Disk does not exist. Cannot continue.")
 
-        if mntpnt is None:
-            mntpnt=self.mntpnt
-        if parent is None:
-            parent=os.path.join("/mnt/",self.volname.strip('/'))
-        mntpnt=os.path.join(parent,mntpnt.strip('/'))
+        mntpnt=self.real_mountpoint(mntpnt,parent)
 
         if os.path.ismount(mntpnt):
             # Already mounted
             return mntpnt
+
+        sp0=subprocess.Popen(("xm","list",self.guest_name))
+        if sp0.wait() == 0:
+            fail ("Xen guest running.")
 
         # mkdir
         try:
@@ -330,7 +342,8 @@ class Disk:
 
         return mntpnt
 
-    def umount(self,mntpnt=None):
+    def umount(self,mntpnt=None,parent=None):
+        mntpnt=self.real_mountpoint(mntpnt,parent)
         if not os.path.ismount(mntpnt):
             return False
 
@@ -345,7 +358,7 @@ class Disk:
             subprocess.call(("fuser","-k","-9","-c",mntpnt))
             subprocess.check_call(("sync"))
             subprocess.check_call(("sync"))
-            subprocess.call(("umount",instdir))
+            subprocess.call(("umount",mntpnt))
 
             # Second time a charm
             sp=subprocess.Popen(("umount",mntpnt),stdout=sys.stdout,stderr=sys.stderr)
@@ -456,17 +469,26 @@ def do_format(fschoice):
 
 
 @Fork(timeout=3600)
-def do_debootstrap():
-    print "Beginning installation."
-    print >>sys.stderr, "Install begin for User: {guestname}".format(guestname=guestname)
-    sp=None
-    if os=='debian':
-        print >>sys.stderr, "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
-        subprocess.call(('debootstrap','--arch',OSARCH,VERSION,instdir,MIRROR),stdout=sys.stdout)
-    elif os=='ubuntu':
-        print >>sys.stderr, "Executing debootstrap (--arch $OSARCH $VERSION /mnt/${guestname} $MIRROR)"
-        subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',OSARCH,VERSION,instdir,MIRROR),stdout=sys.stdout)
+def do_debootstrap(suite,distro=None,arch=None,mirror=None):
+    arch = arch or 'amd64'
+    distro = distro or {
+        'lenny': 'debian',
+        'etch': 'debian',
+        'jaunty': 'ubuntu',
+        'karmic': 'ubuntu',
+        'lucid': 'ubuntu,
+    }[suite]
+    mirror = mirror or {
+        'debian': 'ftp://ftp.grokthis.net/debian',
+        'ubuntu': 'ftp://ftp.grokthis.net/ubuntu',
+    }[distro]
 
+    if distro=='debian':
+        subprocess.call(('debootstrap','--arch',arch,suite,mntpnt,mirror),stdout=sys.stdout)
+    elif distro=='ubuntu':
+        subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',arch,suite,mntpnt,mirror),stdout=sys.stdout)
+    else:
+        fail("Unknown distribution. Pass 'distro' option to debootstrap";
 
 @Fork(timeout=1800)
 def do_extract(dest, file):
@@ -481,28 +503,42 @@ def do_extract(dest, file):
 
 @Fork(timeout=1800)
 def do_urlextract(dest, url):
-    #mntpnt=dsklst['/'].mount()
+    dest=FilePath(dest)
+
+    # Don't do this if not mounted!
+    mntpnt=dsklst['/'].real_mountpoint()
+    if not os.path.ismount(mntpnt):
+        return False
+
     if not dest.isdir():
         return False
-    os.chdir(dest.dirname()+dest.basename())
+    #os.chdir(dest.dirname()+dest.basename())
     #os.chroot(mntpnt)
-
+   
     try:
         uh=urllib2.urlopen(url)
         tf=tarfile.open(mode='r|*',fileobj=uh)
+        os.chroot(mntpnt)
+        os.chdir(dest.dirname()+dest.basename())
         tf.extractall()
     except:
         traceback.print_exc()
     os.chdir('/')
 
 @Fork(timeout=1800)
-def do_rawriteurl(dest, url):
+def do_rawriteurl(url):
     global dsklst
+
+    # Don't do this if mounted!
+    mntpnt=dsklst['/'].real_mountpoint()
+    if os.path.ismount(mntpnt):
+        return False
+    
     ddof=open(dsklst['/'].devpath(),'w+b')
 
-    mntpnt=dsklst['/'].mount()
-    os.chdir(mntpnt)
-    os.chroot(mntpnt)
+    #mntpnt=dsklst['/'].mount()
+    #os.chdir(mntpnt)
+    #os.chroot(mntpnt)
 
     uh=urllib2.urlopen(url)
     tf=tarfile.open(mode='r|*',fileobj=uh)
@@ -511,6 +547,16 @@ def do_rawriteurl(dest, url):
         ddof.write(buf)
         ddof.flush()
     ddof.clone()
+
+@Fork(timeout=1800)
+def do_mount(path):
+    global dsklst
+    dsklst[path].mount()
+
+@Fork(timeout=1800)
+def do_umount(path):
+    global dsklst
+    dsklst[path].umount()
 
 @Fork(timeout=1800)
 def do_peekfs(cmd,path,*args):
@@ -578,10 +624,18 @@ def do_peekfs(cmd,path,*args):
             map (lambda f: f.basename(), fp.globChildren(glob))
         return lambda *args: _wrap(fp,*args)
 
-    def _get(fp):
+    def _b64get(fp):
         return lambda: base64.b64encode(fp.getContent())
 
-    mntpnt=dsklst['/'].mount()
+    def _b64put(fp):
+        return lambda content: fp.setContent(base64.b64decode(content))
+
+    mntpnt=dsklst['/'].real_mountpoint()
+
+    # Make sure the user mounts us, don't auto-mount
+    if not os.path.ismount(mntpnt):
+        return False
+
     os.chdir(mntpnt)
     os.chroot(mntpnt)
 
@@ -602,7 +656,9 @@ def do_peekfs(cmd,path,*args):
         'isfile': fp.isfile,
         'islink': fp.islink,
         'isabs': fp.isabs,
-        'listdir': fp.listdir,
+        #'listdir': fp.listdir,
+        'ls': fp.listdir,
+        'dir': fp.listdir,
         'splitext': fp.splitext,
         'touch': fp.touch,
         'rm': fp.remove,
@@ -615,11 +671,13 @@ def do_peekfs(cmd,path,*args):
         'mv': _moveTo(fp),
         'append': _astring(fp),
         'apply_template': _template(fp),
-        'wget': _wget(fp),
-        'urlextract': _urlextract(fp),
-        'extract': _extract(fp),
-        'get': _get(fp),
-        'ls': _ls(fp),
+        #'wget': _wget(fp),
+        #'urlextract': _urlextract(fp),
+        #'extract': _extract(fp),
+        'get': fp.getContent,
+        'b64get': _b64get(fp),
+        'b64put': _b64put(fp),
+        #'ls': _ls(fp),
         #'mknod': _mknod(fp)
     }[cmd](*args)
 
@@ -656,7 +714,8 @@ def main(argv=None):
             wipesrc= '/dev/zero',
             #partition= partchoice,
             dev="/dev/sda1",
-            options="defaults,noatime"
+            options="defaults,noatime",
+            guest_name= client['username'],
         ),
         'swap': Disk(
             method='LVM',
@@ -670,7 +729,8 @@ def main(argv=None):
             wipesrc= '/dev/zero',
             partition = False,
             dev="/dev/sdb1",
-            options="defaults"
+            options="defaults",
+            guest_name= client['username'],
         )
     }
 
@@ -679,11 +739,13 @@ def main(argv=None):
         #'putf': wstring,
         #'appendf': astring,
         #'extract': do_extract,
-        #'urlextract': do_urlextract,
+        'urlextract': do_urlextract,
         'rawrite': do_rawriteurl,
         'mkfs': do_format,
         'debootstrap': do_debootstrap,
-        'peekfs': do_peekfs
+        'peekfs': do_peekfs,
+        'mount': do_mount,
+        'umount': do_umount,
     }
 
 
