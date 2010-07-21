@@ -31,6 +31,8 @@ try:
 except ImportError:
     import json
 import urllib2
+import ftplib
+import mimetypes
 
 # used for random filenames...
 import random
@@ -467,25 +469,31 @@ def do_debootstrap():
 
 
 @Fork(timeout=1800)
-def do_extract(dest, url):
+def do_extract(dest, file):
     # Extract a tarball
-    mntpnt=dsklst['/'].mount()
-    os.chdir(mntpnt)
-    os.chroot(mntpnt)
+    #mntpnt=dsklst['/'].mount()
+    #os.chdir(mntpnt)
+    #os.chroot(mntpnt)
 
-    uh=open(uri)
+    uh=open(file)
     tf=tarfile.open(mode='r|*',fileobj=uh)
     tf.extractall()
 
 @Fork(timeout=1800)
 def do_urlextract(dest, url):
-    mntpnt=dsklst['/'].mount()
-    os.chdir(mntpnt)
-    os.chroot(mntpnt)
+    #mntpnt=dsklst['/'].mount()
+    if not dest.isdir():
+        return False
+    os.chdir(dest.dirname()+dest.basename())
+    #os.chroot(mntpnt)
 
-    uh=urllib2.urlopen(url)
-    tf=tarfile.open(mode='r|*',fileobj=uh)
-    tf.extractall()
+    try:
+        uh=urllib2.urlopen(url)
+        tf=tarfile.open(mode='r|*',fileobj=uh)
+        tf.extractall()
+    except:
+        traceback.print_exc()
+    os.chdir('/')
 
 @Fork(timeout=1800)
 def do_rawriteurl(dest, url):
@@ -517,7 +525,7 @@ def do_peekfs(cmd,path,*args):
     def _wget(fp):
         def _wrap(path,url):
             req=urllib2.urlopen(url).read()
-            tehfile=path.open('w')
+            tehfile=path.open('wb')
             tehfile.write(req)
             tehfile.close()
         return lambda *args: _wrap(fp,*args)
@@ -554,7 +562,7 @@ def do_peekfs(cmd,path,*args):
         return lambda *args: _wrap(fp,*args)
 
     def _urlextract(fp):
-        return lambda *args: do_urlextract(fp,*args)
+        return lambda url: do_urlextract(fp,url)
 
     def _extract(fp):
         return lambda *args: do_extract(fp,*args)
@@ -569,6 +577,9 @@ def do_peekfs(cmd,path,*args):
         def _wrap(fp,glob="*"):
             map (lambda f: f.basename(), fp.globChildren(glob))
         return lambda *args: _wrap(fp,*args)
+
+    def _get(fp):
+        return lambda: base64.b64encode(fp.getContent())
 
     mntpnt=dsklst['/'].mount()
     os.chdir(mntpnt)
@@ -607,6 +618,7 @@ def do_peekfs(cmd,path,*args):
         'wget': _wget(fp),
         'urlextract': _urlextract(fp),
         'extract': _extract(fp),
+        'get': _get(fp),
         'ls': _ls(fp),
         #'mknod': _mknod(fp)
     }[cmd](*args)
