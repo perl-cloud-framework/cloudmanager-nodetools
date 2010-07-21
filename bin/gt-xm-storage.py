@@ -102,6 +102,25 @@ def astring(string,filename):
     tehfile.write(string)
     tehfile.close()
 
+def is_regularf(self,file):
+    # If not string, probably a FilePath
+    if type(file) == type(''):
+        path = file
+    else:
+        path = file.dirname() + file.basename()
+
+    if os.path.islink(path):
+        path=os.path.join(os.path.dirname(path), os.readlink(path))
+    try:
+        si=os.stat(path)
+    except OSError:
+        return False
+
+    # si[0] should contain st_mode, required by S_ISREG
+    if not stat.S_ISREG(si[0]):
+        return False
+    return True
+
 # Sets class variables by args
 def cvarargs (cls,cvars,**kwargs):
     for key in kwargs:
@@ -654,7 +673,11 @@ def do_peekfs(cmd,path,*args):
         return lambda: base64.b64encode(fp.getContent())
 
     def _b64put(fp):
-        return lambda content: fp.setContent(base64.b64decode(content))
+        def _wrap(path,content):
+            if not is_regularf(path):
+                return False
+            return path.setContent(base64.b64decode(content))
+        return lambda *args: _wrap(fp,*args)
 
     mntpnt=dsklst['/'].real_mountpoint()
 
