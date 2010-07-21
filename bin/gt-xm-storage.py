@@ -720,7 +720,7 @@ def main(argv=None):
             volname= client['username'],
             wipesrc= '/dev/zero',
             #partition= partchoice,
-            dev="/dev/sda1",
+            dev="/dev/"+client['disk_namespace']+"a1",
             options="defaults,noatime",
             guest_name= client['username'],
         ),
@@ -735,7 +735,7 @@ def main(argv=None):
             volname= "{0}swap".format(client['username']),
             wipesrc= '/dev/zero',
             partition = False,
-            dev="/dev/sdb1",
+            dev="/dev/"+client['disk_namespace']+"b1",
             options="defaults",
             guest_name= client['username'],
         )
