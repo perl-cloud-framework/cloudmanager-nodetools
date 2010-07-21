@@ -488,8 +488,15 @@ def do_debootstrap(suite,distro=None,arch=None,mirror=None):
     elif distro=='ubuntu':
         subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',arch,suite,mntpnt,mirror),stdout=sys.stdout)
     else:
-        fail("Unknown distribution. Pass 'distro' option to debootstrap";
+        fail("Unknown distribution. Pass 'distro' option to debootstrap")
 
+def do_fstab(part=None):
+    global dsklst
+    if part:
+        return dsklst[part].fstab()
+
+    return [ dsklst[x].fstab() for x in dsklst ]
+        
 @Fork(timeout=1800)
 def do_extract(dest, file):
     # Extract a tarball
@@ -739,6 +746,7 @@ def main(argv=None):
         #'putf': wstring,
         #'appendf': astring,
         #'extract': do_extract,
+        'fstab': do_fstab,
         'urlextract': do_urlextract,
         'rawrite': do_rawriteurl,
         'mkfs': do_format,
