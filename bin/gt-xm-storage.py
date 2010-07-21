@@ -578,6 +578,7 @@ def do_extract(dest, file):
 
 @Fork(timeout=1800)
 def do_urlextract(dest, url):
+    global dsklst
     dest=FilePath(dest)
 
     # Don't do this if not mounted!
@@ -829,7 +830,7 @@ def main(argv=None):
         #'extract': do_extract,
         'fstab': do_fstab,
         'urlextract': do_urlextract,
-        'rawrite': do_rawriteurl,
+        #'rawrite': do_rawriteurl,
         'mkfs': do_format,
         'debootstrap': do_debootstrap,
         'peekfs': do_peekfs,
