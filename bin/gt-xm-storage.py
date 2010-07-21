@@ -508,6 +508,13 @@ def do_format(fschoice):
 
 @Fork(timeout=3600)
 def do_debootstrap(suite,distro=None,arch=None,mirror=None):
+    mntpnt=dsklst['/'].mount()
+    if not dsklst['/'].is_mounted():
+        return False
+
+    os.chdir(mntpnt)
+    os.chroot(mntpnt)
+
     arch = arch or 'amd64'
     distro = distro or {
         'lenny': 'debian',
@@ -522,9 +529,9 @@ def do_debootstrap(suite,distro=None,arch=None,mirror=None):
     }[distro]
 
     if distro=='debian':
-        subprocess.call(('debootstrap','--arch',arch,suite,mntpnt,mirror),stdout=sys.stdout)
+        subprocess.call(('debootstrap','--arch',arch,suite,'/',mirror),stdout=sys.stdout)
     elif distro=='ubuntu':
-        subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',arch,suite,mntpnt,mirror),stdout=sys.stdout)
+        subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',arch,suite,'/',mirror),stdout=sys.stdout)
     else:
         fail("Unknown distribution. Pass 'distro' option to debootstrap")
 
