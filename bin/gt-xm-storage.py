@@ -674,7 +674,7 @@ def do_peekfs(cmd,path,*args):
 
     def _b64put(fp):
         def _wrap(path,content):
-            if not is_regularf(path):
+            if path.exists and not is_regularf(path):
                 return False
             return path.setContent(base64.b64decode(content))
         return lambda *args: _wrap(fp,*args)
