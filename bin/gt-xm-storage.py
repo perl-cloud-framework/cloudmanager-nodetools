@@ -476,7 +476,7 @@ def do_debootstrap(suite,distro=None,arch=None,mirror=None):
         'etch': 'debian',
         'jaunty': 'ubuntu',
         'karmic': 'ubuntu',
-        'lucid': 'ubuntu,
+        'lucid': 'ubuntu',
     }[suite]
     mirror = mirror or {
         'debian': 'ftp://ftp.grokthis.net/debian',
