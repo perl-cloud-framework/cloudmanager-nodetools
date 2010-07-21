@@ -220,38 +220,40 @@ class Disk:
         return True
 
     def create(disk):
+        if disk.devpath():
+            return False
+
+        # Create disks.
+        try:
+            print "Creating disk.\n"
+            ex=('/etc/xen/shell/gt-reimage/disk.d/{0}'.format(disk.method),
+                disk.size,
+                disk.volname,
+                disk.location )
+            sp=subprocess.Popen(ex, stdout=subprocess.PIPE, stderr=subprocess.PIPE )
+            soo=sp.communicate()
+            sp.wait()
+            #print >>sys.stderr, "Created disk. \nSTDOUT:\n({0})\nSTDERR:\n{1}\n".format(soo[0],soo[1])
+        except:
+            #CalledProcessError:
+            fail ("Could not create disk.")
+
         if not disk.devpath():
-            # Create disks.
-            try:
-                print "Creating disk.\n"
-                ex=('/etc/xen/shell/gt-reimage/disk.d/{0}'.format(disk.method),
-                    disk.size,
-                    disk.volname,
-                    disk.location )
-                sp=subprocess.Popen(ex, stdout=subprocess.PIPE, stderr=subprocess.PIPE )
-                soo=sp.communicate()
-                sp.wait()
-                #print >>sys.stderr, "Created disk. \nSTDOUT:\n({0})\nSTDERR:\n{1}\n".format(soo[0],soo[1])
-            except:
-                #CalledProcessError:
-                fail ("Could not create disk.")
+            fail ("Disk does not exist. Cannot continue.")
 
-            if not disk.devpath():
-                fail ("Disk does not exist. Cannot continue.")
+        # Wiping is provided as a security measure to prevent
+        # data exposure.  Simply zero'ing blocks is sufficient
+        # unless users have physical access to the device.
 
-            # Wiping is provided as a security measure to prevent
-            # data exposure.  Simply zero'ing blocks is sufficient
-            # unless users have physical access to the device.
-
-            if disk.wipe > 0:
-                print "Wiping block device (may take a while)\n"
-                sp0=subprocess.Popen(('dd',"if={0}".format(disk.wipesrc),'bs=8M'),stdout=subprocess.PIPE,stderr=sys.stdout)
-                sp1=subprocess.Popen(('pv'),stdin=sp0.stdout,stdout=subprocess.PIPE,stderr=sys.stdout)
-                sp2=subprocess.Popen(('dd','of={0}'.format(disk.devpath()),'bs=8M'),stdin=sp1.stdout,stderr=sys.stdout)
-                sp0.wait()
-                sp1.wait()
-                sp2.wait()
-                disk.wipe-=1
+        if disk.wipe > 0:
+            print "Wiping block device (may take a while)\n"
+            sp0=subprocess.Popen(('dd',"if={0}".format(disk.wipesrc),'bs=8M'),stdout=subprocess.PIPE,stderr=sys.stdout)
+            sp1=subprocess.Popen(('pv'),stdin=sp0.stdout,stdout=subprocess.PIPE,stderr=sys.stdout)
+            sp2=subprocess.Popen(('dd','of={0}'.format(disk.devpath()),'bs=8M'),stdin=sp1.stdout,stderr=sys.stdout)
+            sp0.wait()
+            sp1.wait()
+            sp2.wait()
+            disk.wipe-=1
 
     def set_partitioned(disk):
         devpath=disk.devpath()
