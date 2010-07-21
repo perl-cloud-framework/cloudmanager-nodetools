@@ -159,6 +159,7 @@ class Disk:
         self.mountoptions=data['options']
         self.guest_name=data['guest_name']
         self.dpathsuffix=None
+        self.real_mntpnt=None
         self._devpath=None
         pass
 
@@ -287,6 +288,7 @@ class Disk:
         disk.dpathsuffix="p1"
 
     def format(disk):
+        global MKFS
         if disk.is_mounted():
             return False
 
@@ -294,7 +296,6 @@ class Disk:
         if not devpath:
             disk.create()
             devpath=disk.devpath()
-        subprocess.call(('umount',"/mnt/{0}".format(disk.volname)))
 
         if not disk.partition:
             disk.partition='N'
@@ -315,14 +316,14 @@ class Disk:
         if not MKFS[disk.ftype]:
             fail ('Filesystem choice invalid.')
 
-        print "Building filesystem."
+        #print "Building filesystem."
         fscmd=map(lambda x: x.format(device=devpath), MKFS[disk.ftype])
-        print >>sys.stderr,"mkfs, cmd: {0}".format(" ".join(fscmd))
+        #print >>sys.stderr,"mkfs, cmd: {0}".format(" ".join(fscmd))
         sp=subprocess.Popen(fscmd,stdout=sys.stdout)
         # Block return until format complete 
-        sp.wait()
+        return sp.wait()
 
-    def is_mounted(self,mntpnt=None):
+    def is_mounted(self,mntpnt=None,parent=None):
         mntpnt=mntpnt or self.real_mountpoint(mntpnt,parent)
 
         if os.path.ismount(mntpnt):
@@ -500,20 +501,21 @@ def do_format(fs=None,fschoice=None):
     for mntpnt,disk in disks.items():
         if not disk.ftype:
             disk.ftype = fschoice
-        print "Formatting filesystem.\n"
+        #print "Formatting filesystem.\n"
         disk.format()
+        return True
 
         #print "format complete."
 
-        if disk.domount:
-            print >>sys.stderr, "Mounting filesystem at instdir ({0})".format(instdir)
-            disk.mount(parent=instdir)
+        #if disk.domount:
+        #    #print >>sys.stderr, "Mounting filesystem at instdir ({0})".format(instdir)
+        #    disk.mount(parent=instdir)
 
-        if disk.mntpnt == '/':
-            rootmounted=True
+        #if disk.mntpnt == '/':
+        #    rootmounted=True
 
-    if not rootmounted:
-        fail ("Instance root filesystem not found.")
+    #if not rootmounted:
+    #    fail ("Instance root filesystem not found.")
 
 
 @Fork(timeout=3600)
