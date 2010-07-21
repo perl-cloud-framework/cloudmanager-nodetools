@@ -1,5 +1,6 @@
 #!/usr/bin/env python2.6
-# gt-xm-reimage0.py - uid0 reimaging script 
+# gt-xm-storage.py - block storage access API
+# refactored from gt-xm-reimage0.py
 # refactored from original gt-xm-reimage0 shell script
 # Copyright (C) 2006-2010 Eric Windisch
 #
@@ -107,7 +108,7 @@ def is_regularf(self,file):
     if type(file) == type(''):
         path = file
     else:
-        path = file.dirname() + file.basename()
+        path = os.path.join(file.dirname(),file.basename())
 
     if os.path.islink(path):
         path=os.path.join(os.path.dirname(path), os.readlink(path))
@@ -292,6 +293,9 @@ class Disk:
         if disk.is_mounted():
             return False
 
+        if self.exported():
+            return False
+
         devpath=disk.devpath()
         if not devpath:
             disk.create()
@@ -345,6 +349,12 @@ class Disk:
         self.real_mntpnt = mntpnt
         return mntpnt
 
+    def exported(self):
+        sp0=subprocess.Popen(("xm","list",self.guest_name))
+        if sp0.wait() == 0:
+            return True
+        return False
+
     # Optionally accept parent argument to mount under a sub-dir.
     def mount(self,mntpnt=None,parent=None):
         if not self.domount:
@@ -356,12 +366,11 @@ class Disk:
 
         mntpnt=self.real_mountpoint(mntpnt,parent)
 
-        if self.ismounted():
+        if self.is_mounted():
             # Already mounted
             return mntpnt
 
-        sp0=subprocess.Popen(("xm","list",self.guest_name))
-        if sp0.wait() == 0:
+        if self.exported():
             fail ("Xen guest running.")
 
         # mkdir
@@ -402,7 +411,7 @@ class Disk:
             # Second time a charm
             sp=subprocess.Popen(("umount",mntpnt),stdout=sys.stdout,stderr=sys.stderr)
             if sp.wait() != 0:
-                print "Mount error."
+                print "umount error."
                 raise
 
         return True
@@ -524,13 +533,15 @@ def do_debootstrap(suite,distro=None,arch=None,mirror=None):
     if not dsklst['/'].is_mounted():
         return False
 
-    os.chdir(mntpnt)
-    os.chroot(mntpnt)
+    #os.chdir(mntpnt)
+    #os.chroot(mntpnt)
 
     arch = arch or 'amd64'
     distro = distro or {
         'lenny': 'debian',
         'etch': 'debian',
+        'dapper': 'ubuntu',
+        'hardy': 'ubuntu',
         'jaunty': 'ubuntu',
         'karmic': 'ubuntu',
         'lucid': 'ubuntu',
@@ -541,9 +552,9 @@ def do_debootstrap(suite,distro=None,arch=None,mirror=None):
     }[distro]
 
     if distro=='debian':
-        subprocess.call(('debootstrap','--arch',arch,suite,'/',mirror),stdout=sys.stdout)
+        subprocess.call(('debootstrap','--arch',arch,suite,mntpnt,mirror),stdout=sys.stdout)
     elif distro=='ubuntu':
-        subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',arch,suite,'/',mirror),stdout=sys.stdout)
+        subprocess.call(('debootstrap','--no-resolve-deps','--exclude=console-setup','--arch',arch,suite,mntpnt,mirror),stdout=sys.stdout)
     else:
         fail("Unknown distribution. Pass 'distro' option to debootstrap")
 
@@ -583,7 +594,7 @@ def do_urlextract(dest, url):
         uh=urllib2.urlopen(url)
         tf=tarfile.open(mode='r|*',fileobj=uh)
         os.chroot(mntpnt)
-        os.chdir(dest.dirname()+dest.basename())
+        os.chdir(os.path.join(dest.dirname(),dest.basename()))
         tf.extractall()
     except:
         traceback.print_exc()
@@ -615,12 +626,21 @@ def do_rawriteurl(url):
 @Fork(timeout=1800)
 def do_mount(path):
     global dsklst
-    dsklst[path].mount()
+    try:
+        if dsklst[path].mount():
+            return True
+    except:
+        pass
+    return False
 
 @Fork(timeout=1800)
 def do_umount(path):
     global dsklst
-    dsklst[path].umount()
+    try:
+        dsklst[path].umount()
+    except:
+        pass
+    return not dsklst[path].is_mounted()
 
 @Fork(timeout=1800)
 def do_peekfs(cmd,path,*args):
