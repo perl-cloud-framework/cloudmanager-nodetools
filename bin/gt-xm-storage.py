@@ -266,6 +266,9 @@ class Disk:
         disk.dpathsuffix="p1"
 
     def format(disk):
+        if disk.is_mounted():
+            return False
+
         devpath=disk.devpath()
         if not devpath:
             disk.create()
@@ -298,13 +301,26 @@ class Disk:
         # Block return until format complete 
         sp.wait()
 
+    def is_mounted(self,mntpnt=None):
+        mntpnt=mntpnt or self.real_mountpoint(mntpnt,parent)
+
+        if os.path.ismount(mntpnt):
+            # Already mounted
+            return mntpnt
+        else:
+            return False
+
     def real_mountpoint(self,mntpnt=None,parent=None):
+        if self.real_mntpnt:
+            return self.real_mntpnt
+
         if mntpnt is None:
             mntpnt=self.mntpnt
         if parent is None:
             parent=os.path.join("/mnt/",self.volname.strip('/'))
         mntpnt=os.path.join(parent,mntpnt.strip('/'))
 
+        self.real_mntpnt = mntpnt
         return mntpnt
 
     # Optionally accept parent argument to mount under a sub-dir.
@@ -318,7 +334,7 @@ class Disk:
 
         mntpnt=self.real_mountpoint(mntpnt,parent)
 
-        if os.path.ismount(mntpnt):
+        if self.ismounted():
             # Already mounted
             return mntpnt
 
@@ -343,9 +359,10 @@ class Disk:
         return mntpnt
 
     def umount(self,mntpnt=None,parent=None):
-        mntpnt=self.real_mountpoint(mntpnt,parent)
-        if not os.path.ismount(mntpnt):
+        if not self.is_mounted():
             return False
+
+        mntpnt=self.real_mountpoint(mntpnt,parent)
 
         sp=subprocess.Popen(("umount",mntpnt),stdout=sys.stdout,stderr=sys.stderr)
         if sp.wait() != 0:
